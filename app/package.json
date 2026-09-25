@@ -2,7 +2,7 @@
   "name": "frame-control",
   "productName": "Frame Control",
   "version": "0.2.0",
-  "description": "Mac app for managing a Valve Steam Frame over SSH",
+  "description": "Desktop app for managing a Valve Steam Frame over SSH",
   "private": true,
   "main": "main.js",
   "license": "MIT",
@@ -10,7 +10,9 @@
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "icon": "env -u ELECTRON_RUN_AS_NODE electron build/make-icon.js",
     "dist": "electron-builder --mac --arm64 --publish never",
-    "dist:dir": "electron-builder --mac --arm64 --dir"
+    "dist:dir": "electron-builder --mac --arm64 --dir",
+    "dist:linux": "electron-builder --linux --x64 --arm64 --publish never",
+    "dist:win": "node build/fetch-python.js && electron-builder --win --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^44.4.5",
@@ -82,6 +84,56 @@
       "runAsNode": false,
       "enableNodeOptionsEnvironmentVariable": false,
       "enableNodeCliInspectArguments": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "executableName": "frame-control",
+      "synopsis": "Manage a Valve Steam Frame over SSH",
+      "artifactName": "Frame-Control-${version}-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "frame-control"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "python3",
+        "openssh-client"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Frame-Control-${version}-win-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "build/python-win",
+          "to": "python",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Frame-Control-Setup-${version}.${ext}"
     }
+  },
+  "homepage": "https://github.com/saphid/steam-frame",
+  "author": {
+    "name": "saphid",
+    "email": "4596216+saphid@users.noreply.github.com"
   }
 }

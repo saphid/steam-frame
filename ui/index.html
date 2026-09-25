@@ -384,8 +384,8 @@
   <section id="shots">
     <div class="shelf-head"><h2>Screenshots</h2><span class="count" id="shotCount"></span><span class="spacer"></span>
       <button class="small" id="shotsRefresh">Refresh</button>
-      <button class="small" id="shotsFolder" title="Open ~/Pictures/SteamFrame">Show in Finder</button>
-      <button class="action small" id="shotsSaveNew" disabled>Save new to Mac</button>
+      <button class="small" id="shotsFolder" title="Open the SteamFrame folder in your Pictures">Show folder</button>
+      <button class="action small" id="shotsSaveNew" disabled>Save new to this computer</button>
     </div>
     <div class="shot-grid" id="shotGrid"><div class="sub">Loading…</div></div>
     <div class="hint">Screenshots you take in the headset with Steam's screenshot shortcut. Click one to open it in the viewer; Save copies it to <code>~/Pictures/SteamFrame</code>.</div>
@@ -465,7 +465,7 @@
       <textarea id="clipText" style="margin-top:16px" placeholder="Text to put on the Frame's clipboard…"></textarea>
       <div class="row" style="margin-top:8px">
         <button class="action small" id="clipSend">Send text</button>
-        <button class="small" id="clipMac">Send Mac clipboard</button>
+        <button class="small" id="clipMac">Send this computer's clipboard</button>
       </div>
       <div class="hint">Clipboard needs the desktop panel open in the headset.</div>
     </section>
@@ -522,7 +522,7 @@
         <button data-open="reboot" data-confirm="Restart the Frame?"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>Restart</button>
         <button data-open="poweroff" data-confirm="Shut the Frame down?" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>Shut down</button>
       </div>
-      <div class="hint">Sleep, Restart and Shut down open Terminal for the Developer Mode password.</div>
+      <div class="hint">Sleep, Restart and Shut down open a terminal window for the Developer Mode password.</div>
       <div class="links">
         <div><a href="https://store.steampowered.com/remoteplay" target="_blank">Steam Link</a>: Valve's remote view of the headset</div>
         <div><a href="https://streamframe.app/" target="_blank">Stream Frame</a>: third-party recorder (macOS 14+)</div>
@@ -612,6 +612,15 @@ $("bottombar").onclick = () => {
   const open = $("drawer").classList.toggle("open");
   $("drawerHint").textContent = open ? "Hide ▾" : "Show ▴";
 };
+
+// Wording for the computer the app runs on (Mac or PC, Finder or File Explorer).
+const HOST = { computer: "computer" };
+function applyHostWording(h) {
+  Object.assign(HOST, h);
+  $("shotsFolder").textContent = h.fileManager === "your file manager" ? "Open folder" : `Show in ${h.fileManager}`;
+  $("shotsSaveNew").textContent = `Save new to ${h.computer}`;
+  $("clipMac").textContent = `Send ${h.computer} clipboard`;
+}
 
 async function api(path, body) {
   const opts = body === undefined ? { headers: {"X-Frame-UI": "1"} } : {
@@ -1060,7 +1069,7 @@ $("clipSend").onclick = () => {
   if (!text) return toast("Nothing to send", true);
   act("Send text to clipboard", () => api("/api/clipboard", { text }), $("clipSend"));
 };
-$("clipMac").onclick = () => act("Send Mac clipboard", () => api("/api/clipboard", { fromMac: true }), $("clipMac"));
+$("clipMac").onclick = () => act($("clipMac").textContent, () => api("/api/clipboard", { fromComputer: true }), $("clipMac"));
 
 // ---- file drop ----
 const drop = $("drop");
@@ -1461,7 +1470,7 @@ async function loadReports() {
   catch (e) { $("repList").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
   $("repHint").textContent = shared
     ? "Reports go to Frame Control's shared compatibility database and change the verdicts in the catalogue. Any APK can be reported, including ones not on F-Droid."
-    : "Reports are saved on this Mac and change the verdicts you see. They aren't uploaded: the shared database is maintainer-only for now. Any APK can be reported, including ones not on F-Droid.";
+    : "Reports are saved on this computer and change the verdicts you see. They aren't uploaded: the shared database is maintainer-only for now. Any APK can be reported, including ones not on F-Droid.";
   $("repCount").textContent = reps.length ? `${reps.length} newest` : "";
   $("repList").innerHTML = reps.length ? reps.slice(0, 40).map(r => {
     const k = r.rating || r.result;
@@ -1522,6 +1531,7 @@ $("repForm").onsubmit = async e => {
   finally { $("repSave").disabled = false; }
 };
 loadReports();
+api("/api/host").then(applyHostWording).catch(() => {});
 
 // ---- Steam screenshots from the headset ----
 const shots = { list: [], urls: [] };
@@ -1547,14 +1557,14 @@ async function loadShots() {
   } finally { $("shotsRefresh").disabled = false; }
   shots.urls.forEach(URL.revokeObjectURL); shots.urls = [];
   const unsaved = shots.list.filter(s => !s.saved).length;
-  $("shotCount").textContent = shots.list.length ? `${shots.list.length} on the Frame` + (unsaved ? ` · ${unsaved} not on this Mac` : "") : "";
+  $("shotCount").textContent = shots.list.length ? `${shots.list.length} on the Frame` + (unsaved ? ` · ${unsaved} not on this ${HOST.computer}` : "") : "";
   $("shotsSaveNew").disabled = !unsaved;
   $("shotGrid").innerHTML = shots.list.length ? shots.list.map((s, i) => `<div class="shot-card">
       <img class="thumb" data-shot="${i}" alt="Screenshot from ${esc(shotApp(s.appid))}" title="Open in the viewer">
       <div class="row"><div class="grow">
           <div class="t">${esc(shotApp(s.appid))}</div>
           <div class="s">${esc(new Date(s.time * 1000).toLocaleString())}</div></div>
-        ${s.saved ? `<span class="tag">On Mac</span>` : `<button class="small" data-shot-save="${i}">Save</button>`}
+        ${s.saved ? `<span class="tag">On ${HOST.computer}</span>` : `<button class="small" data-shot-save="${i}">Save</button>`}
       </div></div>`).join("")
     : `<div class="sub">No screenshots on the Frame yet.</div>`;
   // Thumbnails one at a time over the shared SSH connection.
@@ -1606,7 +1616,7 @@ $("shotGrid").onclick = e => {
 };
 $("shotsRefresh").onclick = loadShots;
 $("shotsSaveNew").onclick = e => saveShots(shots.list.filter(s => !s.saved), e.currentTarget);
-$("shotsFolder").onclick = e => act("Show in Finder", () => api("/api/open", { what: "shots" }), e.currentTarget);
+$("shotsFolder").onclick = e => act($("shotsFolder").textContent, () => api("/api/open", { what: "shots" }), e.currentTarget);
 
 // ---- nav highlight follows scroll ----
 const spy = new IntersectionObserver(entries => {

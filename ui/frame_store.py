@@ -1,4 +1,4 @@
-"""Mac side: search the Steam store and look up each result's Steam Frame rating.
+"""Computer side: search the Steam store and look up each result's Steam Frame rating.
 
 Uses the store's public endpoints (no key, no login):
   api/storesearch                              name search, price in the IP's currency

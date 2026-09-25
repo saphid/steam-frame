@@ -1,20 +1,23 @@
 """Frame Control's compatibility database: a private Lakebed capsule
 (compat-db/, https://frame-compat.lakebed.app) that only this app can read or
-write, using a key kept in the macOS Keychain (service frame-control-compat-db,
-account app-key).
+write, using a key from $FRAME_CONTROL_KEY or the macOS Keychain (service
+frame-control-compat-db, account app-key). Without one (anyone but the
+maintainer), reports stay local.
 
 New reports go to a local outbox first and are sent from there, so nothing is
 lost offline. A mirror of every report is kept for offline reads. Both live in
-~/Library/Application Support/Frame Control/compat-db/. Python stdlib only.
+frame_host.data_dir('compat-db'). Python stdlib only.
 
 CLI: python3 ui/frame_compat_db.py {count|export FILE|import FILE|flush}
 (import restores a backup; reports already in the database are skipped.)
 """
 import json, os, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 
+import frame_host
+
 URL = os.environ.get('FRAME_COMPAT_DB_URL', 'https://frame-compat.lakebed.app')
 KEYCHAIN = ('frame-control-compat-db', 'app-key')
-STATE = os.path.expanduser('~/Library/Application Support/Frame Control/compat-db')
+STATE = str(frame_host.data_dir('compat-db'))
 OUTBOX = os.path.join(STATE, 'compat-outbox.jsonl')
 MIRROR = os.path.join(STATE, 'compat-mirror.json')
 FIELDS = ('package', 'version', 'result', 'rating', 'notes', 'via', 'date', 'steamos', 'lepton', 'runtime',
@@ -32,9 +35,11 @@ def key():
     k = os.environ.get('FRAME_CONTROL_KEY')
     if k:
         return k
-    p = subprocess.run(['security', 'find-generic-password', '-s', KEYCHAIN[0], '-a', KEYCHAIN[1], '-w'],
-                       capture_output=True, text=True)
-    if p.returncode != 0 or not p.stdout.strip():
+    p = None
+    if frame_host.MAC:
+        p = subprocess.run(['security', 'find-generic-password', '-s', KEYCHAIN[0], '-a', KEYCHAIN[1], '-w'],
+                           capture_output=True, text=True)
+    if p is None or p.returncode != 0 or not p.stdout.strip():
         raise DBError('No compatibility-database key in the Keychain '
                       f'(service {KEYCHAIN[0]}, account {KEYCHAIN[1]})')
     return p.stdout.strip()
@@ -42,7 +47,7 @@ def key():
 
 def shared():
     """Whether reports reach the shared database. Without the key (anyone but the
-    maintainer), reports stay in this Mac's outbox and ratings come from the catalogue."""
+    maintainer), reports stay in this computer's outbox and ratings come from the catalogue."""
     try:
         key()
         return True
