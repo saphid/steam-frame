@@ -1,7 +1,7 @@
 #!/bin/bash
 # Linux-side (x64 host): cross-compile arm64 Chromium with the Linux OpenXR CLs
 # (8441736 + 8132979, bug 506004811) so WebXR immersive-vr works on the Frame.
-# Needs ~90 GB free, no sudo. Takes hours; run it detached, e.g. on buildhost:
+# Needs ~90 GB free, no sudo. Takes hours; run it detached on the build host:
 #   scp scripts/build-chromium-xr.sh buildhost:chromium-xr/build.sh
 #   ssh buildhost 'cd ~/chromium-xr && tmux new -d -s chromium-xr "./build.sh > build.log 2>&1"'
 # Progress: ~/chromium-xr/stage. Output: ~/chromium-xr/chromium-xr-arm64.tar.xz,

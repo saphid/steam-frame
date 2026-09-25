@@ -434,8 +434,8 @@
       <div class="panel">
         <div class="shelf-head"><h2>Recent reports</h2><span class="count" id="repCount"></span></div>
         <div class="list" id="repList"><div class="sub">Loading…</div></div>
-        <div class="hint">Reports go to Frame Control's private compatibility database and change the
-          verdicts in the catalogue. Any APK can be reported, including ones not on F-Droid.</div>
+        <div class="hint" id="repHint">Reports change the verdicts in the catalogue. Any APK can be
+          reported, including ones not on F-Droid.</div>
       </div>
       </div>
       <div class="panel">
@@ -1456,9 +1456,12 @@ const RLABEL = { works: "Works", issues: "Problems", broken: "Doesn't work", run
                  crashes: "Crashed (test)", install_failed: "Won't install", instance_failed: "Didn't start (test)" };
 const RCLASS = { works: "works", runs: "works", issues: "maybe" };
 async function loadReports() {
-  let reps;
-  try { reps = (await api("/api/android/reports")).reports; }
+  let reps, shared;
+  try { ({ reports: reps, shared } = await api("/api/android/reports")); }
   catch (e) { $("repList").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  $("repHint").textContent = shared
+    ? "Reports go to Frame Control's shared compatibility database and change the verdicts in the catalogue. Any APK can be reported, including ones not on F-Droid."
+    : "Reports are saved on this Mac and change the verdicts you see. They aren't uploaded: the shared database is maintainer-only for now. Any APK can be reported, including ones not on F-Droid.";
   $("repCount").textContent = reps.length ? `${reps.length} newest` : "";
   $("repList").innerHTML = reps.length ? reps.slice(0, 40).map(r => {
     const k = r.rating || r.result;

@@ -1,11 +1,11 @@
 {
   "name": "frame-control",
   "productName": "Frame Control",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Mac app for managing a Valve Steam Frame over SSH",
   "private": true,
   "main": "main.js",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "icon": "env -u ELECTRON_RUN_AS_NODE electron build/make-icon.js",

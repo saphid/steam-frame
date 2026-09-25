@@ -1,8 +1,13 @@
 # Steam Frame ↔ Mac
 
-This repo holds notes and Mac-side helpers for controlling a Valve Steam Frame
-(standalone VR headset: SteamOS 3, Arch-based, arm64, Snapdragon 8 Gen 3) from
-this Mac, with as little typing on the headset's virtual keyboard as possible.
+**Frame Control** is a Mac app for managing a Valve Steam Frame (standalone VR
+headset: SteamOS 3, Arch-based, arm64, Snapdragon 8 Gen 3) over SSH: live
+headset view, battery and status, your Steam library, Android (Lepton) apps,
+file and clipboard transfer. This repo also holds the scripts behind it and
+field notes on how the Frame's software works, all aimed at as little typing
+on the headset's virtual keyboard as possible.
+
+It's an unofficial hobby project, not affiliated with Valve.
 
 Status: written 2026-09-25 and checked against a real Frame the same day
 (SteamOS 0.3.0, variant `vr`, build 20260922). The **Frame Control** Mac app
@@ -10,8 +15,41 @@ and most scripts are **verified** on the device. The scripts table below marks
 each one, and [docs/open-questions.md](docs/open-questions.md#verified-on-device-2026-09-25)
 lists what's still unchecked.
 
-**Quick start:** set up SSH once (next section), then install
-[Frame Control](#frame-control-mac-app) from the DMG.
+## Trying it out
+
+You need:
+
+- A Steam Frame with **Developer Mode** on (next section; it's a toggle).
+- A Mac with Apple Silicon (M1 or later). Tested on macOS 26. There's no Intel
+  build.
+- `python3` on the Mac (`xcode-select --install` provides it).
+- Optional: `adb` for Android apps (`brew install android-platform-tools`).
+
+Steps:
+
+1. Download the DMG from the
+   [latest release](https://github.com/saphid/steam-frame/releases/latest),
+   open it and drag **Frame Control** to Applications.
+2. The app isn't notarized (no paid Apple developer account), so macOS will
+   say it's damaged or can't be checked. Clear the download quarantine once:
+   ```sh
+   xattr -dr com.apple.quarantine "/Applications/Frame Control.app"
+   ```
+3. Open it. With no `frame` SSH alias yet, it offers to run the connection
+   setup in Terminal. That asks for the Developer Mode password once, then
+   uses a key from then on.
+
+**Feedback:** please open a
+[GitHub issue](https://github.com/saphid/steam-frame/issues) with what you
+tried, your SteamOS build (Steam Settings → System) and the server log
+(**Frame → Show Server Log**, at `~/Library/Logs/Frame Control/server.log`).
+Features are marked **verified** or not below; the unverified ones are the
+most useful to hear about.
+
+**What it changes on your Frame:** only what you click. Installs go to your
+user account (`--user` Flatpaks, Lepton instances, Steam downloads), and
+nothing needs `sudo` except the power buttons. On the Mac it adds a `Host
+frame` entry to `~/.ssh/config` and a key at `~/.ssh/id_ed25519_frame`.
 
 ## Minimum typing on the headset
 
@@ -33,8 +71,10 @@ On the Frame:
 
 On the Mac:
 
+To use the scripts from a checkout instead of the app:
+
 ```sh
-cd ~/projects/steam-frame
+git clone https://github.com/saphid/steam-frame.git && cd steam-frame
 ./scripts/connect.sh              # or: ./scripts/connect.sh 192.168.1.50
 ssh frame                          # passwordless from now on
 ```
@@ -127,9 +167,10 @@ the same UI in a browser without packaging:
 - **Android apps**: search about 4,500 F-Droid apps rated for the Frame, install
   one with a click as its own Lepton instance (it keeps its data and shows in the
   Steam library), then launch, stop, test or remove it. **Report an APK** records whether any APK
-  worked (F-Droid or not: pick a file, type a package, or use an installed app). The
-  ratings go into our private compatibility database (a Lakebed capsule only the
-  app can use, backed up daily to Google Drive; see `compat-db/README.md`)
+  worked (F-Droid or not: pick a file, type a package, or use an installed app). Your
+  reports are saved on your Mac and change the verdicts you see. They aren't
+  uploaded anywhere: the shared database is maintainer-only for now (see
+  `compat-db/README.md`)
 - **Android display**: pick a running Lepton instance (by the app in it) and set
   its resolution (Native 1920×1080, or Sharp 2560×1440 with density scaled to
   match), UI scale (Smaller / Default / Larger, or an exact dpi) and text size
@@ -177,9 +218,7 @@ Finder. Each time it starts while there's no `frame` SSH alias, the app offers
 to run `connect.sh` in Terminal. **Frame → Set Up Connection…** does the same
 at any time. The Frame menu also shows the server log at
 `~/Library/Logs/Frame Control/server.log`. Installing APKs needs `adb`
-(`brew install android-platform-tools`). The Android ratings database needs
-its key in the Keychain (see `compat-db/README.md`); without it, the app uses
-its offline copy.
+(`brew install android-platform-tools`). The F-Droid ratings are bundled with the app.
 
 The build is ad-hoc signed and not notarized. A copy you build yourself opens
 normally. A copy downloaded from GitHub Releases is quarantined; clear it with
@@ -202,7 +241,7 @@ showed live status and the library.
 | `scripts/run-on-frame.sh` | Mac → Frame | Start an app on the headset desktop, e.g. `mac-screen` opens Remmina straight into the Mac (**verified**) |
 | `scripts/frame-ui.sh` | Mac | Start the Frame Control web UI (`ui/server.py`) and open it (**verified**) |
 | `scripts/apk-catalog.sh` | Mac | Refresh the rated F-Droid catalogue that Frame Control's Android section shows (**verified**) |
-| `scripts/compat-db-backup.sh` | Mac | Back up the compatibility database locally and to Google Drive (daily LaunchAgent) (**verified**) |
+| `scripts/compat-db-backup.sh` | Mac | Maintainer-only: back up the shared compatibility database locally and to Google Drive (**verified**) |
 | `scripts/push-vr-video.sh` | Mac → Frame | Upload VR180/360 videos to `~/Videos/VR`, linked into DeoVR's Proton prefix; `--launch` starts DeoVR (**verified**: upload and link; in-headset playback of local files not yet checked). See [docs/vr-video.md](docs/vr-video.md) |
 | `scripts/push.sh` | Mac → Frame | `rsync` files to `~/Downloads` (or a given path) on the Frame (**verified**) |
 | `scripts/serve-bootstrap.sh` | Mac | Fallback: serve `bootstrap-on-frame.sh` with your public key embedded |
@@ -238,3 +277,8 @@ may find (Xcode Command Line Tools), plus syntax checks for every script and the
 Electron main process (`.github/workflows/checks.yml`). Anything that touches the
 headset is verified by hand against a real Frame, and the docs label it
 **verified** or **inferred**.
+
+## License
+
+[MIT](LICENSE). Steam, Steam Frame and SteamVR are trademarks of Valve
+Corporation. This project isn't affiliated with or endorsed by Valve.

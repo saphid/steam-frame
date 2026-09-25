@@ -1,11 +1,11 @@
 ---
 name: steam-frame
-description: Operate the user's Valve Steam Frame headset from the Mac through the ~/projects/steam-frame helpers and field notes. Use for Steam Frame SSH, screen streaming, clipboard, file push, APK or Flatpak installs, launching apps on the headset, arranging floating windows or panels in VR space, or debugging SteamOS/gamescope/SteamVR on the Frame.
+description: Operate the user's Valve Steam Frame headset from the Mac through this repo's helpers and field notes. Use for Steam Frame SSH, screen streaming, clipboard, file push, APK or Flatpak installs, launching apps on the headset, arranging floating windows or panels in VR space, or debugging SteamOS/gamescope/SteamVR on the Frame.
 ---
 
 # Steam Frame
 
-The repo is `~/projects/steam-frame`. SSH works through the `frame` alias
+SSH works through the `frame` alias
 (user `steamos`). The headset has to be awake for anything that touches its
 desktop or panels.
 

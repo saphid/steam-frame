@@ -4,9 +4,9 @@
 #
 # Exports every report through the app's own key (ui/frame_compat_db.py), keeps
 # dated copies in ~/Library/Application Support/Frame Control/compat-db/backups (newest
-# 60), and uploads to Google Drive (the backup folder) when
-# the data changed since the last upload. Run daily by the LaunchAgent
-# frame-compat-backup (see docs/apks.md).
+# 60), and uploads to the Google Drive folder DRIVE_FOLDER_ID when the data
+# changed since the last upload. Maintainer-only: it needs the database key.
+# Run it daily from a LaunchAgent (see compat-db/README.md).
 #
 # Usage: scripts/compat-db-backup.sh [--no-upload] [--force-upload] [--accept-shrink]
 # Env:   DRIVE_FOLDER_ID, GOG_WRAPPER
@@ -14,8 +14,8 @@ set -euo pipefail
 
 ROOT="${0:A:h}/.."
 DEST="$HOME/Library/Application Support/Frame Control/compat-db/backups"
-DRIVE_FOLDER_ID=${DRIVE_FOLDER_ID:-<drive-folder-id>}
-GOG_WRAPPER=${GOG_WRAPPER:-$HOME/bin/gog-with-keyring.sh}
+DRIVE_FOLDER_ID=${DRIVE_FOLDER_ID:-}
+GOG_WRAPPER=${GOG_WRAPPER:-$(command -v gog || true)}
 upload=1 force=0 accept_shrink=0
 for arg in "$@"; do
   case "$arg" in
@@ -60,9 +60,10 @@ if (( upload )); then
     print "==> Unchanged since the last Drive upload; skipped"
     exit 0
   fi
-  [[ -x "$GOG_WRAPPER" ]] || { print -u2 "gog wrapper not found at $GOG_WRAPPER"; exit 1; }
+  [[ -n "$DRIVE_FOLDER_ID" ]] || { print -u2 "Set DRIVE_FOLDER_ID, or pass --no-upload"; exit 1; }
+  [[ -n "$GOG_WRAPPER" && -x "$GOG_WRAPPER" ]] || { print -u2 "gog not found; install it or set GOG_WRAPPER"; exit 1; }
   "$GOG_WRAPPER" drive upload "$out" --parent "$DRIVE_FOLDER_ID" --json --no-input >/dev/null
   "$GOG_WRAPPER" drive upload "$out.sha256" --parent "$DRIVE_FOLDER_ID" --json --no-input >/dev/null
   print -r -- "$digest" > "$last"
-  print "==> Uploaded to Google Drive (the backup folder)"
+  print "==> Uploaded to Google Drive"
 fi

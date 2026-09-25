@@ -27,8 +27,8 @@ rules and the evidence behind them are in [docs/apks.md](../docs/apks.md).
 
 ## Compatibility reports
 
-Reports live in Frame Control's private database, a Lakebed capsule at
-`https://frame-compat.lakebed.app` that only the app can read or write (see
+Reports are saved on your Mac. The maintainer's copy of Frame Control also
+syncs them to a private Lakebed database (see
 [compat-db/README.md](../compat-db/README.md), including backups). **Test**
 records whether an app stays up in its own instance (`result`); **Report**
 (on any installed app, catalogue card, or **+ Report an APK** for anything else, e.g. an

@@ -1,11 +1,12 @@
 # compat-db: Frame Control's compatibility database
 
 A private [Lakebed](https://docs.lakebed.dev/) capsule holding compatibility
-reports for Android apps on the Steam Frame. Only Frame Control can read or
-write it.
+reports for Android apps on the Steam Frame. For now only the maintainer's
+copy of Frame Control has the key to read or write it. Everyone else's reports
+stay on their own Mac (see `shared()` in `ui/frame_compat_db.py`).
 
 - Live: `https://frame-compat.lakebed.app` (deploy `dep_dDmcsosVSiFirpW6`,
-  owned by `saphid`, doesn't expire). The browser page only says it's private.
+  claimed, so it doesn't expire). The browser page only says it's private.
 - Access: `GET /v1/reports?since=<createdAt>` and `POST /v1/reports` with
   `{"reports": [...]}`. Both need the `x-frame-control-key` header. There are
   no Lakebed queries or mutations, so nothing else can reach the rows.
@@ -22,10 +23,9 @@ write it.
 `scripts/compat-db-backup.sh` exports every report through the app key and
 keeps dated copies in
 `~/Library/Application Support/Frame Control/compat-db/backups` (newest 60).
-When the data has changed, it also uploads them to Google Drive
-(**the backup folder**, folder
-`<drive-folder-id>`) with `gog`. The LaunchAgent
-`frame-compat-backup` runs it daily at 03:40; the log is
+When the data has changed, it also uploads them with `gog` to the Google
+Drive folder named by `DRIVE_FOLDER_ID` (set it in the LaunchAgent's
+`EnvironmentVariables`). A LaunchAgent runs it daily at 03:40 and logs to
 `~/Library/Logs/frame-compat-backup.log`. If an export has fewer reports than
 the last good backup (`backups/.last-good`), it's kept as `refused-*.json`,
 nothing is uploaded, and every later run refuses too until you rerun with

@@ -438,7 +438,8 @@ def android(body):
                                          runtime=body.get("runtime") or "instance",
                                          label=body.get("label"), source=body.get("source"))
             name = r.get("label") or pkg
-            return {"message": f"Saved your report for {name}", "report": r}
+            where = "" if frame_catalog.compat_db.shared() else " on this Mac"
+            return {"message": f"Saved your report for {name}{where}", "report": r}
     except frame_android.FrameError as e:
         raise Failure(str(e))
     raise Failure("unknown action", 400)
@@ -793,7 +794,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/android/displays":
                 self.send_json(android_displays())
             elif path == "/api/android/reports":
-                self.send_json({"reports": frame_catalog.recent_reports()})
+                self.send_json({"reports": frame_catalog.recent_reports(),
+                                "shared": frame_catalog.compat_db.shared()})
             elif path == "/api/android/catalog":
                 self.send_json({"apps": frame_catalog.catalog()})
             elif path == "/api/status":

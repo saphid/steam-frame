@@ -8,13 +8,13 @@
 # Flatpak, so SteamVR's sockets and the XR sandbox work unmodified).
 #
 # Usage:
-#   scripts/chromium-xr.sh install [TARBALL]  # default: fetch from $BUILD_HOST
+#   scripts/chromium-xr.sh install [TARBALL]  # default: scp from $BUILD_HOST
 #   scripts/chromium-xr.sh launch [URL]       # opens in the headset desktop
 #   scripts/chromium-xr.sh check              # isSessionSupported via DevTools
 set -euo pipefail
 
 FRAME_ALIAS=${FRAME_ALIAS:-frame}
-BUILD_HOST=${BUILD_HOST:-buildhost}
+BUILD_HOST=${BUILD_HOST:-}
 BUILD_TARBALL=${BUILD_TARBALL:-chromium-xr/chromium-xr-arm64.tar.xz}
 DEVTOOLS_PORT=${DEVTOOLS_PORT:-9223}
 here=${0:A:h}
@@ -23,6 +23,7 @@ case "${1:-}" in
   install)
     tarball=${2:-}
     if [[ -z "$tarball" ]]; then
+      [[ -n "$BUILD_HOST" ]] || { print -u2 "Pass a tarball, or set BUILD_HOST to the build machine"; exit 2; }
       tmp=$(mktemp -d)
       trap 'rm -rf "$tmp"' EXIT
       tarball=$tmp/chromium-xr-arm64.tar.xz

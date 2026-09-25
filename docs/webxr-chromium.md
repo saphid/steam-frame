@@ -51,14 +51,14 @@ installs the sysroot, builds `chrome` with `symbol_level=0` and proprietary
 codecs, and packs `chromium-xr-arm64.tar.xz`. Progress is logged to
 `~/chromium-xr/stage`. The build aborts if `/` drops below 12 GB free.
 
-First run: buildhost (12 cores, 31 GB RAM), started 2026-09-25.
+First run: a 12-core, 31 GB x64 Linux box, started 2026-09-25.
 
 ## Running it on the Frame
 
 [`scripts/chromium-xr.sh`](../scripts/chromium-xr.sh):
 
 ```sh
-scripts/chromium-xr.sh install          # scp from buildhost, unpack to ~/chromium-xr
+BUILD_HOST=my-linux-box scripts/chromium-xr.sh install  # your build host; scp, unpack to ~/chromium-xr
 scripts/chromium-xr.sh launch [URL]     # headset desktop, --enable-features=OpenXR
 scripts/chromium-xr.sh check            # prints isSessionSupported('immersive-vr')
 ```

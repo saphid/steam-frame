@@ -40,6 +40,16 @@ def key():
     return p.stdout.strip()
 
 
+def shared():
+    """Whether reports reach the shared database. Without the key (anyone but the
+    maintainer), reports stay in this Mac's outbox and ratings come from the catalogue."""
+    try:
+        key()
+        return True
+    except DBError:
+        return False
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Never follow redirects: urllib would copy the key header to the new host."""
     def redirect_request(self, *args, **kwargs):
@@ -169,6 +179,8 @@ def load():
     now = time.time()
     if _mem['reports'] is None or now - _mem['at'] > TTL:
         try:
+            if not shared():
+                raise DBError('no key')
             try:
                 flush()
             except Exception:
@@ -196,8 +208,9 @@ def add(report):
     with _lock, open(OUTBOX, 'a') as f:
         f.write(json.dumps(r, ensure_ascii=False) + '\n')
     try:
-        flush()
-        _mem['at'] = 0  # refetch on next load
+        if shared():
+            flush()
+            _mem['at'] = 0  # refetch on next load
     except Exception:
         pass  # stays queued; load() shows it and a later call sends it
     return r

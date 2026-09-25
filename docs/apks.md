@@ -135,11 +135,11 @@ collects community reports for Steam games only and has no public API, and
 Valve's "Great on Frame" badges and each Steam app's `recommended_runtime`
 (for example `lepton-stable`) also cover Steam games only
 ([VR.org](https://vr.org/articles/steam-frame-lepton-android-runtime-52-of-130-certified-2026)).
-So we keep our own, in a private Lakebed database
-(`https://frame-compat.lakebed.app`) that only Frame Control can read or write.
+So Frame Control keeps its own. Your reports are saved on your Mac; the
+maintainer's copy also syncs them to a private Lakebed database.
 **Test** records whether the app stays up in its own instance, and **Report**
 (for any APK, F-Droid or not) records whether it worked, how it was run, where it came from, and notes, each with the SteamOS and Lepton build ids.
-A daily job backs it up locally and to Google Drive. See
+See
 [compat-db/README.md](../compat-db/README.md) and
 [apk-catalog/README.md](../apk-catalog/README.md).
 
@@ -188,13 +188,12 @@ But pasta runs with `--map-gw`, so the **gateway address inside Lepton
 
 T3 Code v2 on the Mac listens only on `127.0.0.1:3873`. To reach it:
 
-1. The LaunchAgent `~/Library/LaunchAgents/frame-t3-tunnel.plist`
-   keeps `ssh -N -R 127.0.0.1:3873:127.0.0.1:3873 frame` running. launchd
-   restarts it if it drops. Log: `~/Library/Logs/frame-t3-tunnel.log`.
+1. Keep `ssh -N -R 127.0.0.1:3873:127.0.0.1:3873 frame` running on the Mac,
+   for example from a LaunchAgent with `KeepAlive`, so launchd restarts it if
+   it drops.
 2. In the app on the Frame, the environment host is `192.168.1.1:3873`.
 
-The app on the Frame was built from the v2 nightly source (fork commit
-`d0c468e3`) with `expo prebuild` and `gradlew assembleRelease
+The app on the Frame was built from the T3 Code v2 nightly source with `expo prebuild` and `gradlew assembleRelease
 -PreactNativeArchitectures=arm64-v8a`, using Homebrew `openjdk@17` and the
 `android-commandlinetools` SDK. It's signed with the debug key.
 
