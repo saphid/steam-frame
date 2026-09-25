@@ -12,6 +12,7 @@ import http.client
 import json
 import os
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -272,6 +273,41 @@ def save_shots(body):
     return {"message": msg + (f" ({skipped} already there)" if skipped else ""), "saved": n}
 
 
+# Live video of the headset view. SteamVR's steamvr-v4l2cam.service copies the
+# headset view (one undistorted 1920x1080 image) into the v4l2loopback device
+# /dev/video99. ffmpeg encodes it with x264 (the hardware encoder crashes
+# ffmpeg) and the raw H.264 comes back over SSH for the page to decode with
+# WebCodecs. An access unit delimiter starts every frame so the page can split
+# the stream, and repeated SPS/PPS let it start at any keyframe. ffmpeg runs in
+# the background while the shell waits for our stdin to close: when the local
+# ssh goes, the channel closes and the shell kills ffmpeg, even one that has
+# stopped writing (and so would never get SIGPIPE).
+STREAM_DEVICE = "/dev/video99"
+STREAM_HEIGHTS = (720, 1080)
+STREAM_FPS = (30, 60)
+STREAM_STALL = 10  # seconds without video before the stream is dropped
+_stream_lock = threading.Lock()
+_stream_proc = None
+
+
+def stream_command(query):
+    q = parse_qs(query)
+    try:
+        height = int((q.get("h") or ["720"])[0])
+        fps = int((q.get("fps") or ["30"])[0])
+    except ValueError:
+        raise Failure("h and fps must be integers", 400)
+    if height not in STREAM_HEIGHTS or fps not in STREAM_FPS:
+        raise Failure(f"h must be one of {STREAM_HEIGHTS} and fps one of {STREAM_FPS}", 400)
+    rate = 3 if height == 720 else 6  # Mbit/s
+    return (f"[ -e {STREAM_DEVICE} ] || {{ echo 'No headset view device ({STREAM_DEVICE}). Is SteamVR running?' >&2; exit 3; }}; "
+            f"ffmpeg -hide_banner -loglevel error -nostdin -f v4l2 -video_size 1920x1080 -i {STREAM_DEVICE} "
+            f"-vf fps={fps},scale=-2:{height},format=yuv420p -c:v libx264 -preset ultrafast -tune zerolatency "
+            f"-g {fps * 2} -bf 0 -b:v {rate}M -maxrate {rate}M -bufsize {rate // 2 or 1}M "
+            f"-x264-params aud=1:repeat-headers=1 -f h264 - & p=$!; "
+            f"exec >&-; cat >/dev/null; kill $p 2>/dev/null; wait $p")
+
+
 def launch(body):
     appid = str(body.get("appid", ""))
     if not APPID.match(appid):
@@ -423,7 +459,7 @@ FONT_RANGE = (0.5, 2.0)
 KNOWN_LABELS = {"com.t3tools.t3code": "T3 Code", "org.fdroid.fdroid": "F-Droid"}
 # One ADB session at a time: requests are rare, and it keeps adb's state simple.
 _adb_lock = threading.Lock()
-_live_tunnels = set()  # ssh processes to kill if the server stops mid-request
+_live_tunnels = set()  # ssh processes (ADB forwards, live video) to kill if the server stops mid-request
 
 
 def adb_path():
@@ -770,6 +806,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(list_shots())
             elif path == "/api/shots/image":
                 self.send_bytes(*shot_image(url.query))
+            elif path == "/api/stream":
+                self.stream_video(url.query)
             elif path == "/api/screenshot" and parse_qs(url.query).get("view") == ["headset"]:
                 self.send_bytes(headset_view(), "image/png", headers=[("X-Capture-Source", "steamvr")])
             elif path == "/api/screenshot":
@@ -807,6 +845,64 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": f"bad request: {e}"}, 400)
         except Exception as e:
             self.send_json({"error": f"{type(e).__name__}: {e}"}, 500)
+
+    def stream_video(self, query):
+        """Raw H.264 of the headset view until the page disconnects (see stream_command)."""
+        global _stream_proc
+        remote = stream_command(query)
+        ensure_master()
+        # stderr goes to a file: nothing reads it while streaming, and a full
+        # pipe would stall ffmpeg. It's only read if the stream fails to start.
+        errors = tempfile.TemporaryFile()
+        proc = subprocess.Popen([*SSH, FRAME, remote], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=errors)
+        try:
+            _live_tunnels.add(proc)
+            # One viewer at a time: a new stream (another tab, a reload) ends the last one.
+            with _stream_lock:
+                old, _stream_proc = _stream_proc, proc
+            if old and old.poll() is None:
+                old.terminate()
+            fd = proc.stdout.fileno()
+            # Nothing is sent until the first bytes arrive, so a failure to
+            # start still comes back as a JSON error.
+            ready, _, _ = select.select([fd], [], [], 20)
+            first = os.read(fd, 1 << 16) if ready else b""
+            if not first:
+                proc.kill()
+                proc.wait()
+                errors.seek(0)
+                err = strip_ansi(errors.read().decode(errors="replace")).strip()
+                raise Failure(err or "The headset view sent no video for 20 s")
+            chunk = first
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "video/h264")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Frame-Options", "DENY")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+                self.end_headers()
+                self.close_connection = True  # the body ends when the connection does
+                while chunk:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    # A stalled headset view ends the stream rather than
+                    # holding this thread (and the page) forever.
+                    ready, _, _ = select.select([fd], [], [], STREAM_STALL)
+                    chunk = os.read(fd, 1 << 16) if ready else b""
+            except OSError:
+                pass  # the page stopped watching (or stopped reading); the body has started, so no JSON
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            for f in (proc.stdin, proc.stdout, errors):
+                f.close()
+            _live_tunnels.discard(proc)
 
     def upload(self):
         """Raw file body. X-Filename names it; X-Mode is 'push', 'apk' (install) or 'apkinfo' (read only)."""
@@ -871,7 +967,7 @@ def main():
         subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True)
         if _master and _master.poll() is None:
             _master.terminate()
-        for proc in list(_live_tunnels):  # ADB forwards of requests cut off mid-way
+        for proc in list(_live_tunnels):  # ADB forwards and video streams cut off mid-way
             if proc.poll() is None:
                 proc.terminate()
 

@@ -83,6 +83,7 @@ class ServerGuards(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/status")[0], 403)
         self.assertEqual(self.request("GET", "/api/screenshot?view=headset")[0], 403)
         self.assertEqual(self.request("GET", "/api/shots")[0], 403)
+        self.assertEqual(self.request("GET", "/api/stream")[0], 403)
         self.assertEqual(self.request("GET", "/api/shots/image?id=1/250820/20260925225208_1.jpg")[0], 403)
         self.assertEqual(self.request("POST", "/api/launch", {"appid": "620"})[0], 403)
 
@@ -115,6 +116,11 @@ class ServerGuards(unittest.TestCase):
         for shot in ("../../etc/passwd", "1/250820/x.jpg", "1/2/20260925225208_1.jpg;id", "1/250820/20260925225208_1.gif"):
             status, _, _ = self.request("GET", f"/api/shots/image?id={quote(shot)}", headers={"X-Frame-UI": "1"})
             self.assertEqual(status, 400, shot)
+
+    def test_stream_settings_checked_before_ssh(self):
+        for query in ("h=480", "fps=24", "h=abc", "h=1080&fps=120"):
+            status, _, _ = self.request("GET", f"/api/stream?{query}", headers={"X-Frame-UI": "1"})
+            self.assertEqual(status, 400, query)
 
     def test_bad_bodies(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)

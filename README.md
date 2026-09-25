@@ -105,10 +105,12 @@ the same UI in a browser without packaging:
 
 - **Headset view**: what the lenses show, as SteamVR composites it (the room,
   floating panels, dashboard and controllers). Shows the left eye, like pointing
-  a camera into one lens, or both eyes; single shot or about 2 fps live; saves
-  as PNG. The viewer fits the whole frame; zoom with − / + (or scroll, or
-  double-click), drag to pan, `0` to fit, `F` for full screen. It uses OpenVR's `IVRScreenshots` API through Python `ctypes`
-  (`ui/frame_vrshot.py`), so nothing is installed on the Frame. **Desktop panel**
+  a camera into one lens, or both eyes, as a single shot; saves as PNG. **Live**
+  is 720p video at about 30 fps: `ffmpeg` on the Frame encodes SteamVR's
+  headset-view device (`/dev/video99`) to H.264 over SSH, and the page decodes
+  it with WebCodecs. Live video is one eye; Capture still gets both. The viewer fits the whole frame; zoom with − / + (or scroll, or
+  double-click), drag to pan, `0` to fit, `F` for full screen. Capture uses OpenVR's `IVRScreenshots` API through Python `ctypes`
+  (`ui/frame_vrshot.py`). Nothing extra is installed on the Frame (SteamOS ships `ffmpeg`). **Desktop panel**
   captures gamescope's flat layer instead.
 - Battery with charging state: charge rate in watts, time to full or empty,
   charger type and wattage (for example USB-C PD 20 W), and battery temperature

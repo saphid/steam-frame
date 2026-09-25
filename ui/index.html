@@ -321,7 +321,7 @@
         </div>
         <div class="spacer"></div>
         <button class="action" id="shotBtn">Capture</button>
-        <button id="liveBtn" title="Keep capturing">Live</button>
+        <button id="liveBtn" title="Keep updating: video of the headset view, or repeated captures of the desktop panel">Live</button>
         <button id="saveBtn" disabled>Save</button>
       </div>
       <div class="viewer" id="viewer">
@@ -575,7 +575,7 @@ const QUICK = [["Remmina", "org.remmina.Remmina"], ["Moonlight", "com.moonlight_
                ["Firefox", "org.mozilla.firefox"], ["VLC", "org.videolan.VLC"]];
 const CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps";
 const HINTS = {
-  headset: "What the lenses show, composited by SteamVR: the room, floating panels, dashboard and controllers. Live refreshes about twice a second. Captures show everything on screen, including anything private.",
+  headset: "What the lenses show, composited by SteamVR: the room, floating panels, dashboard and controllers. Live streams it as video (one eye, about 30 fps); Capture takes a still of both eyes. Captures show everything on screen, including anything private.",
   flat: "gamescope's 2D layer: the desktop panel and Steam's flat UI, without the room or VR scene.",
 };
 const SOURCE_LABEL = { steamvr: "Headset view", gamescope: "Desktop panel", shot: "Screenshot" };
@@ -751,10 +751,12 @@ function render(s) {
 
 // ---- view ----
 function setView(v) {
+  const changed = v !== view;
   view = v;
   document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
-  $("eyeSeg").style.visibility = v === "headset" ? "visible" : "hidden";
+  $("eyeSeg").style.visibility = v === "headset" && !video.ctl ? "visible" : "hidden";
   $("viewHint").textContent = HINTS[v];
+  if (live && changed) { toggleLive(false); toggleLive(true); }  // video for the headset, captures for the panel
 }
 function setEye(e) {
   eye = e;
@@ -841,6 +843,7 @@ function isBlank(ctx, w, h) {
   return max - min < 6;
 }
 async function capture() {
+  if (video.ctl) toggleLive(false);  // Capture during live video takes a still of both eyes instead
   const gen = viewGen;  // a screenshot opened meanwhile wins over this capture
   if (!live) $("viewer").classList.add("busy");  // no spinner flashing over a live stream
   let url = null;
@@ -883,7 +886,115 @@ function toggleLive(on) {
   liveFailures = 0;
   $("liveBtn").classList.toggle("on", live);
   $("liveBadge").hidden = !live;
-  if (live) liveLoop(); else clearTimeout(liveTimer);
+  clearTimeout(liveTimer);
+  stopVideo();
+  if (!live) return;
+  if (view === "headset" && "VideoDecoder" in window) {
+    const started = startVideo();
+    const ctl = video.ctl;
+    started.catch(e => {
+      if (!live || ctl !== video.ctl || e.name === "AbortError") return;
+      log("Live video failed: " + e.message, "e");
+      toast("Live video failed, using captures instead: " + e.message, true);
+      stopVideo();
+      liveLoop();
+    });
+  } else liveLoop();
+}
+
+// ---- live video of the headset view ----
+// The server relays raw H.264 (Annex B) from SteamVR's headset-view device.
+// Every frame starts with an access unit delimiter (NAL type 9), which is how
+// the stream is cut into frames for WebCodecs.
+const STREAM_QUERY = "h=720&fps=30", STREAM_FPS = 30;
+const video = { ctl: null, dec: null, gen: 0 };
+function startCode(b, i) { return b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 1; }
+function nalTypes(au) {
+  const types = [];
+  for (let i = 0; i + 3 < au.length; i++) if (startCode(au, i)) { types.push(au[i + 3] & 0x1f); i += 3; }
+  return types;
+}
+async function startVideo() {
+  const gen = ++video.gen, ctl = new AbortController();
+  video.ctl = ctl;
+  $("eyeSeg").style.visibility = "hidden";
+  if (!lastImg) $("viewer").classList.add("busy");
+  let frames = 0, shown = 0, second = performance.now(), needKey = true, ts = 0;
+  const c = $("canvas"), ctx = c.getContext("2d");
+  const dec = video.dec = new VideoDecoder({
+    output: frame => {
+      if (gen !== video.gen) return frame.close();
+      if (c.width !== frame.displayWidth || c.height !== frame.displayHeight) {
+        c.width = frame.displayWidth; c.height = frame.displayHeight;
+        $("viewer").style.aspectRatio = `${c.width} / ${c.height}`;
+        setZoom(1);
+      }
+      ctx.drawImage(frame, 0, 0);
+      frame.close();
+      if (!shown++) {
+        viewGen++;  // a capture still in flight mustn't replace the video
+        lastImg = null; lastSource = "video"; lastShot = null;
+        $("viewer").classList.remove("busy");
+        c.hidden = false; $("viewerEmpty").hidden = true; $("zoombar").hidden = false; $("asleep").hidden = true;
+        $("srcBadge").hidden = false; $("srcBadge").textContent = "Headset view · video";
+        $("stamp").hidden = false; $("saveBtn").disabled = false;
+      }
+      frames++;
+      const now = performance.now();
+      if (now - second >= 1000) {
+        $("stamp").textContent = `${Math.round(frames * 1000 / (now - second))} fps`;
+        frames = 0; second = now;
+      }
+    },
+    error: e => log("Video decoder: " + e.message, "e"),
+  });
+  const r = await fetch(`/api/stream?${STREAM_QUERY}`, { headers: {"X-Frame-UI": "1"}, signal: ctl.signal });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  const reader = r.body.getReader();
+  let buf = new Uint8Array(0), scan = 0, auStart = -1;
+  const onAU = au => {
+    const types = nalTypes(au), key = types.includes(5);
+    if (dec.state === "unconfigured") {
+      const sps = types.indexOf(7);
+      if (sps < 0) return;
+      let i = 0, n = -1;  // find the SPS bytes: profile, constraints, level follow its header
+      for (; i + 3 < au.length; i++) if (startCode(au, i) && ++n === sps) break;
+      if (i + 6 >= au.length) return;
+      const hex = [au[i + 4], au[i + 5], au[i + 6]].map(b => b.toString(16).padStart(2, "0")).join("");
+      dec.configure({ codec: `avc1.${hex}`, optimizeForLatency: true });
+    }
+    // If decoding falls behind, drop frames until the next keyframe rather than lag.
+    if (dec.decodeQueueSize > 3) needKey = true;
+    if (needKey && !key) return;
+    needKey = false;
+    dec.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: ts, data: au }));
+    ts += 1e6 / STREAM_FPS;
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done || gen !== video.gen) break;
+    const next = new Uint8Array(buf.length + value.length);
+    next.set(buf); next.set(value, buf.length);
+    buf = next;
+    if (buf.length > 8 << 20) throw new Error("the stream isn't split into frames");
+    for (; scan + 3 < buf.length; scan++) {
+      if (!startCode(buf, scan) || (buf[scan + 3] & 0x1f) !== 9) continue;
+      if (auStart >= 0) onAU(buf.subarray(auStart, scan));
+      auStart = scan;
+      scan += 3;
+    }
+    if (auStart > 0) { buf = buf.slice(auStart); scan -= auStart; auStart = 0; }
+  }
+  if (gen === video.gen && live) throw new Error(shown ? "the stream ended" : "no video arrived");
+}
+function stopVideo() {
+  video.gen++;
+  if (video.ctl) video.ctl.abort();
+  if (video.dec && video.dec.state !== "closed") video.dec.close();
+  video.ctl = video.dec = null;
+  $("viewer").classList.remove("busy");
+  if (lastSource === "video") { $("srcBadge").textContent = "Headset view · video (stopped)"; $("stamp").hidden = true; }
+  $("eyeSeg").style.visibility = view === "headset" ? "visible" : "hidden";
 }
 $("shotBtn").onclick = () => capture();
 $("liveBtn").onclick = () => toggleLive(!live);
