@@ -6,6 +6,7 @@ Uses the store's public endpoints (no key, no login):
                                                `frame_resolved_category` is the Frame's
 Buying happens on the store page, signed in as the user; nothing here buys.
 """
+import http.client
 import json
 import threading
 import time
@@ -37,7 +38,7 @@ def frame_rating(appid):
         r = _get("saleaction/ajaxgetdeckappcompatibilityreport", {"nAppID": appid, "l": "english"})
         cat = int((r.get("results") or {}).get("frame_resolved_category") or 0)
         cat = cat if 0 <= cat <= 3 else 0
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError, http.client.HTTPException):
         return 0  # not cached, so the next search retries
     with _lock:
         _compat[appid] = (time.time(), cat)

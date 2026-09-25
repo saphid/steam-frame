@@ -1024,7 +1024,8 @@ function price(p) {
   if (!p) return "Free";
   const f = n => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: p.currency }).format(n / 100); }
                    catch { return `${(n / 100).toFixed(2)} ${esc(p.currency || "")}`; } };
-  return p.initial > p.final ? `<s>${f(p.initial)}</s>${f(p.final)}` : f(p.final);
+  const fin = p.final ?? p.initial ?? 0;
+  return p.initial > fin ? `<s>${f(p.initial)}</s>${f(fin)}` : f(fin);
 }
 
 function gameButtons(id, name, free) {

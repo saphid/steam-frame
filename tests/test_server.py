@@ -11,6 +11,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -29,22 +30,25 @@ class ServerGuards(unittest.TestCase):
     def setUpClass(cls):
         cls.port = free_port()
         env = {**os.environ, "FRAME_ALIAS": "frame-control-test.invalid", "PYTHONDONTWRITEBYTECODE": "1"}
+        cls.log = tempfile.TemporaryFile()
         cls.proc = subprocess.Popen([sys.executable, str(ROOT / "ui" / "server.py"), "--port", str(cls.port)],
-                                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    env=env, stdout=cls.log, stderr=subprocess.STDOUT)
         for _ in range(100):
             try:
                 if cls.request("GET", "/")[0] == 200:
                     return
-            except OSError:
+            except Exception:
                 pass
             time.sleep(0.05)
         cls.proc.kill()
-        raise RuntimeError("server didn't start")
+        cls.log.seek(0)
+        raise RuntimeError("server didn't start:\n" + cls.log.read().decode(errors="replace"))
 
     @classmethod
     def tearDownClass(cls):
         cls.proc.terminate()
         cls.proc.wait(timeout=10)
+        cls.log.close()
 
     @classmethod
     def request(cls, method, path, body=None, headers=None):
@@ -78,6 +82,12 @@ class ServerGuards(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/status")[0], 403)
         self.assertEqual(self.request("GET", "/api/screenshot?view=headset")[0], 403)
         self.assertEqual(self.request("POST", "/api/launch", {"appid": "620"})[0], 403)
+
+    def test_captures_are_not_cacheable(self):
+        # Headset captures show everything on screen; nothing may cache them.
+        _, headers, _ = self.request("GET", "/api/screenshot", headers={"X-Frame-UI": "1"})
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertIn("frame-ancestors 'none'", headers.get("Content-Security-Policy", ""))
 
     def test_input_validation(self):
         cases = [

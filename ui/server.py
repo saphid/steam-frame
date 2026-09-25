@@ -8,6 +8,7 @@ Usage: ui/server.py [--port 47810]   (normally started by scripts/frame-ui.sh)
 Env:   FRAME_ALIAS (default frame)
 """
 import argparse
+import http.client
 import json
 import os
 import re
@@ -204,7 +205,7 @@ def steam_frame(*args, timeout=40):
     except Failure as e:
         # frame_steam.py prints {"error": ...} on stdout when it fails, but ssh()
         # reports stderr instead if there was any, so look in both.
-        for line in reversed([*getattr(e, "stdout", "").splitlines(), *str(e).splitlines()]):
+        for line in [*reversed(getattr(e, "stdout", "").splitlines()), *reversed(str(e).splitlines())]:
             try:
                 raise Failure(json.loads(line)["error"]) from None
             except (ValueError, KeyError, TypeError):
@@ -230,17 +231,20 @@ def steam_search(query):
         raise Failure("cc must be a two-letter country code", 400)
     try:
         return {"results": frame_store.search((q.get("q") or [""])[0], cc)}
-    except (OSError, ValueError, TypeError, AttributeError) as e:
+    except (OSError, ValueError, TypeError, AttributeError, http.client.HTTPException) as e:
         raise Failure(f"Steam store search failed: {e}")
 
 
 def set_volume(body):
-    if "muted" in body:
-        ssh(f"wpctl set-mute @DEFAULT_AUDIO_SINK@ {1 if body['muted'] else 0}")
+    # Validate everything before touching the headset.
+    level = None
     if "level" in body:
         level = float(body["level"])
         if not 0 <= level <= 1:
             raise Failure("level must be 0..1", 400)
+    if "muted" in body:
+        ssh(f"wpctl set-mute @DEFAULT_AUDIO_SINK@ {1 if body['muted'] else 0}")
+    if level is not None:
         ssh(f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {level:.2f}")
     return {"message": "Volume updated"}
 

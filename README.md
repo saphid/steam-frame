@@ -171,7 +171,7 @@ npm start        # run from the checkout without packaging
 Open the DMG and drag **Frame Control** to Applications. You need `python3` on
 the Mac (Xcode Command Line Tools or Homebrew). The app reads `PATH` from your
 login shell, so Homebrew's `rsync` and `adb` work when you launch it from
-Finder. On first launch, if there's no `frame` SSH alias yet, the app offers
+Finder. Each time it starts while there's no `frame` SSH alias, the app offers
 to run `connect.sh` in Terminal. **Frame → Set Up Connection…** does the same
 at any time. The Frame menu also shows the server log at
 `~/Library/Logs/Frame Control/server.log`. Installing APKs needs `adb`
@@ -200,6 +200,7 @@ showed live status and the library.
 | `scripts/frame-ui.sh` | Mac | Start the Frame Control web UI (`ui/server.py`) and open it (**verified**) |
 | `scripts/apk-catalog.sh` | Mac | Refresh the rated F-Droid catalogue that Frame Control's Android section shows (**verified**) |
 | `scripts/compat-db-backup.sh` | Mac | Back up the compatibility database locally and to Google Drive (daily LaunchAgent) (**verified**) |
+| `scripts/push-vr-video.sh` | Mac → Frame | Upload VR180/360 videos to `~/Videos/VR`, linked into DeoVR's Proton prefix; `--launch` starts DeoVR (**verified**: upload and link; in-headset playback of local files not yet checked). See [docs/vr-video.md](docs/vr-video.md) |
 | `scripts/push.sh` | Mac → Frame | `rsync` files to `~/Downloads` (or a given path) on the Frame (**verified**) |
 | `scripts/serve-bootstrap.sh` | Mac | Fallback: serve `bootstrap-on-frame.sh` with your public key embedded |
 | `scripts/bootstrap-on-frame.sh` | Frame | Fallback: install the key and enable `sshd` |

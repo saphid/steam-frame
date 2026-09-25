@@ -2,12 +2,15 @@
 // shows it in a native window. The server does all the work over the `frame`
 // SSH alias; this file only hosts it.
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
-const { execFile, execFileSync, spawn } = require("child_process");
+const { execFile, spawn } = require("child_process");
+const { promisify } = require("util");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
+
+const run = promisify(execFile);
 
 // Packaged: Contents/Resources/{ui,scripts}. Dev: the repo checkout.
 const ROOT = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
@@ -25,29 +28,31 @@ let quitting = false;
 
 // Apps launched from Finder get PATH=/usr/bin:/bin:/usr/sbin:/sbin, which misses
 // Homebrew's python3, rsync and adb. Take PATH from the login shell instead.
+// Runs asynchronously so a slow shell profile can't freeze the window.
 let cachedPath = null;
-function loginPath() {
+async function loginPath() {
   if (cachedPath) return cachedPath;
-  const shellPath = process.env.SHELL || "/bin/zsh";
+  const shellPath = os.userInfo().shell || process.env.SHELL || "/bin/zsh";
   const extra = ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".homebrew", "bin")];
   let fromShell = "";
   try {
-    const out = execFileSync(shellPath, ["-ilc", 'printf "\\n__PATH__%s__PATH__" "$PATH"'],
-                             { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
-    fromShell = (out.match(/__PATH__(.*)__PATH__/) || [])[1] || "";
+    const { stdout } = await run(shellPath, ["-ilc", 'printf "\\n__PATH__%s__PATH__" "$PATH"'],
+                                 { encoding: "utf8", timeout: 5000 });
+    fromShell = (stdout.match(/__PATH__(.*)__PATH__/) || [])[1] || "";
   } catch {}
   const parts = [...fromShell.split(":"), ...(process.env.PATH || "").split(":"), ...extra];
-  cachedPath = [...new Set(parts.filter(Boolean))].join(":");
-  return cachedPath;
+  const joined = [...new Set(parts.filter(Boolean))].join(":");
+  if (fromShell) cachedPath = joined;  // retry next time if the shell didn't answer
+  return joined;
 }
 
-function findPython(env) {
+async function findPython(env) {
   for (const dir of env.PATH.split(":")) {
     const p = path.join(dir, "python3");
     try {
       fs.accessSync(p, fs.constants.X_OK);
       // /usr/bin/python3 is a stub until the Command Line Tools are installed.
-      execFileSync(p, ["-c", "import http.server"], { timeout: 10000, stdio: "ignore", env });
+      await run(p, ["-c", "import http.server"], { timeout: 10000, env });
       return p;
     } catch {}
   }
@@ -75,8 +80,8 @@ function ping(target) {
 }
 
 async function startServer() {
-  const env = { ...process.env, PATH: loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" };
-  const python = findPython(env);
+  const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" };
+  const python = await findPython(env);
   if (!python) {
     throw new Error("Frame Control needs python3. Install the Xcode Command Line Tools "
                     + "(xcode-select --install) or Homebrew's python, then reopen the app.");
@@ -106,6 +111,8 @@ async function startServer() {
     if (await ping(target)) { url = target; return; }
     await new Promise((r) => setTimeout(r, 100));
   }
+  if (server === child) server = null;
+  child.kill("SIGTERM");
   throw new Error(`The server didn't start within 10 seconds. See ${LOG}.`);
 }
 
@@ -149,32 +156,34 @@ async function load() {
   const gen = ++loadGen;
   try {
     if (!url) await startServer();
-    if (gen === loadGen && win) await win.loadURL(url);
+    if (gen === loadGen && win) { await win.loadURL(url); firstRunCheck(); }
   } catch (e) {
     if (gen === loadGen && win) await win.loadURL(errorPage(e.message));
   }
 }
 
 // `ssh -G` prints the effective config. An alias nobody configured keeps its
-// own name as HostName and the Mac user as User; connect.sh sets both.
-function aliasConfigured(env) {
+// own name as HostName; connect.sh always writes a HostName.
+async function aliasConfigured(env) {
   try {
-    const out = execFileSync("ssh", ["-G", FRAME], { encoding: "utf8", timeout: 5000, env,
-                                                    stdio: ["ignore", "pipe", "ignore"] });
-    const get = (k) => (out.match(new RegExp(`^${k} (.*)$`, "m")) || [])[1];
-    return get("hostname") !== FRAME || get("user") !== os.userInfo().username;
+    const { stdout } = await run("ssh", ["-G", FRAME], { encoding: "utf8", timeout: 5000, env });
+    return (stdout.match(/^hostname (.*)$/m) || [])[1] !== FRAME;
   } catch {
     return true;  // can't tell; don't nag
   }
 }
 
+let setupOffered = false;
 async function firstRunCheck() {
-  if (aliasConfigured({ ...process.env, PATH: loginPath() })) return;
+  if (setupOffered || !url) return;  // not on the error page, and once per launch
+  if (await aliasConfigured({ ...process.env, PATH: await loginPath() })) return;
+  if (!win || setupOffered) return;
+  setupOffered = true;
   const { response } = await dialog.showMessageBox(win, {
     type: "info",
     message: "Connect to your Steam Frame",
-    detail: `There's no "${FRAME}" SSH alias yet. On the Frame, turn on Developer Mode and set `
-          + "a user password (Steam Settings → System). Then run the setup script: it finds the "
+    detail: `There's no "${FRAME}" SSH alias yet. On the Frame, turn on Steam Settings → System → `
+          + "Enable Developer Mode, then Developer → Set User Password. Then run the setup script: it finds the "
           + "headset, creates a key, and asks for that password once in Terminal.",
     buttons: ["Set Up Connection…", "Later"],
     defaultId: 0, cancelId: 1,
@@ -189,7 +198,7 @@ function createWindow() {
     titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 26 },
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  win.once("ready-to-show", () => { win.show(); firstRunCheck(); });
+  win.once("ready-to-show", () => win.show());
   win.webContents.on("did-finish-load", () => win.webContents.insertCSS(CHROME_CSS));
   // External links open in the default browser; the app never navigates away.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -215,7 +224,7 @@ function runInTerminal(command) {
 const sh = (s) => `'${s.replace(/'/g, "'\\''")}'`;
 
 function setUpConnection() {
-  runInTerminal(`FRAME_ALIAS=${sh(FRAME)} ${sh(path.join(SCRIPTS, "connect.sh"))}`);
+  runInTerminal(`env ${sh(`FRAME_ALIAS=${FRAME}`)} zsh ${sh(path.join(SCRIPTS, "connect.sh"))}`);
 }
 
 function buildMenu() {

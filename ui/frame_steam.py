@@ -142,8 +142,8 @@ OWNED_JS = r"""
 """
 
 WIZARD_JS = """SteamClient.Installs.GetInstallManagerInfo().then(i => ({
-  state: i.eInstallState, app: i.currentAppID, need: i.nDiskSpaceRequired, free: i.nDiskSpaceAvailable,
-  error: i.eAppError, detail: i.errorDetail }))"""
+  state: i?.eInstallState ?? 0, app: i?.currentAppID ?? 0, need: i?.nDiskSpaceRequired || 0,
+  free: i?.nDiskSpaceAvailable || 0, error: i?.eAppError, detail: i?.errorDetail }))"""
 
 
 def steam_url(url):

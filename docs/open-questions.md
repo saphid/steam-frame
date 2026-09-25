@@ -40,7 +40,7 @@ build 20260922.6101926, kernel 6.18, aarch64):
   gets its own SteamVR overlay (`valve.steam.desktopgame.<id>`). Three were
   created side by side with `panel-on-frame.sh`. See [panels.md](panels.md).
 
-Still open: 4, 6, 7, 11 (in-headset connect), 12–17.
+Still open: 4, 6, 7, 11 (in-headset connect), 12–21.
 
 ## Check on the headset (in order)
 
@@ -95,6 +95,11 @@ Still open: 4, 6, 7, 11 (in-headset connect), 12–17.
     F-Droid keyboard (installed and enabled with `ime enable`/`ime set`) work?
 20. **F-Droid 2.0** (Compose 1.12): does it run? If so, the catalogue can
     install it instead of 1.17.2.
+
+21. **DeoVR local files:** does DeoVR's file browser show `Videos → VR`
+    (the symlink from `push-vr-video.sh`) or `Z:\home\steamos\Videos\VR`, and do
+    the colour-coded test clips play in 3D (red left eye, cyan right) for both
+    H.264 and H.265? Does the DLNA browser find a server on the Mac?
 
 ## Unconfirmed claims made in these docs
 
