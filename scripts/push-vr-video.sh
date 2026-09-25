@@ -25,7 +25,7 @@ PREFIX_VIDEOS=".local/share/Steam/steamapps/compatdata/$DEOVR_APPID/pfx/drive_c/
 launch=0 list=0
 while (( $# )); do
   case "$1" in
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     --launch)  launch=1; shift ;;
     --list)    list=1; shift ;;
     --)        shift; break ;;
@@ -33,21 +33,25 @@ while (( $# )); do
     *)         break ;;
   esac
 done
-(( $# || launch || list )) || { sed -n '2,18p' "$0"; exit 2; }
+(( $# || launch || list )) || { sed -n '2,17p' "$0" >&2; exit 2; }
 
 for f in "$@"; do
   [[ -e "$f" ]] || { print -u2 "push-vr-video: no such file: $f"; exit 2; }
 done
 
 # Create the folder and link it into DeoVR's prefix (the prefix exists once
-# DeoVR has run). Never replace a real directory that's already there.
-ssh "$FRAME_ALIAS" "mkdir -p ~/$REMOTE_DIR
+# DeoVR has run). Refresh a stale link, but never replace a real directory.
+if (( $# || launch )); then
+  ssh "$FRAME_ALIAS" "mkdir -p ~/$REMOTE_DIR
 p=~/$PREFIX_VIDEOS
-if [ -d \"\$p\" ] && [ ! -e \"\$p/VR\" ]; then ln -s ~/$REMOTE_DIR \"\$p/VR\"; fi
+if [ -d \"\$p\" ] && { [ -L \"\$p/VR\" ] || [ ! -e \"\$p/VR\" ]; }; then ln -sfn ~/$REMOTE_DIR \"\$p/VR\"
+elif [ -d \"\$p/VR\" ]; then echo \"warning: \$p/VR is a real folder, so uploads won't show under DeoVR's Videos; browse Z:\\\\home\\\\steamos\\\\Videos\\\\VR instead\" >&2; fi
 [ -d \"\$p\" ] || echo 'note: DeoVR has not run yet; use Z:\\home\\steamos\\Videos\\VR or run this again after starting it once' >&2"
+fi
 
 if (( $# )); then
-  rsync -a --partial --progress "$@" "$FRAME_ALIAS:$REMOTE_DIR/"
+  # -L: send what a symlink points at; a Mac-side link would dangle on the Frame
+  rsync -aL --partial --progress -- "$@" "$FRAME_ALIAS:$REMOTE_DIR/"
 fi
 
 if (( list )); then
@@ -55,6 +59,7 @@ if (( list )); then
 fi
 
 if (( launch )); then
-  ssh "$FRAME_ALIAS" "steam steam://rungameid/$DEOVR_APPID >/dev/null 2>&1 &"
+  ssh "$FRAME_ALIAS" "command -v steam >/dev/null || { echo 'steam not found on the Frame' >&2; exit 1; }
+steam steam://rungameid/$DEOVR_APPID </dev/null >/dev/null 2>&1 &"
   print "DeoVR starting on the Frame. Open Local files / the file browser → Videos → VR."
 fi

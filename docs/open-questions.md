@@ -25,7 +25,7 @@ build 20260922.6101926, kernel 6.18, aarch64):
   (`vrserver`, `vrcompositor`) and `xrdp` are running.
 - **9.** `rsync`, `flatpak`, `python3`, `git`, `qdbus6` and `xrdp` are present.
   `wl-copy`, `xclip`, `xsel`, `kdeconnect-cli`, `tailscale`, `krfb` and `wayvnc`
-  are **not**. `paste-to-frame.sh` now uses Klipper over D-Bus and round-trips
+  are **not** (Tailscale can be added in `~`; see [tailscale.md](tailscale.md)). `paste-to-frame.sh` now uses Klipper over D-Bus and round-trips
   text correctly.
 - Flathub is already configured as a **system** remote; Chromium is the only
   installed Flatpak. `/` is 10 GB (42% used); `/home` is 929 GB.
@@ -40,7 +40,7 @@ build 20260922.6101926, kernel 6.18, aarch64):
   gets its own SteamVR overlay (`valve.steam.desktopgame.<id>`). Three were
   created side by side with `panel-on-frame.sh`. See [panels.md](panels.md).
 
-Still open: 4, 6, 7, 11 (in-headset connect), 12–21.
+Still open: 4, 6, 7, 11 (in-headset connect), 12–15, 16 (off-LAN and after a reboot), 17–21.
 
 ## Check on the headset (in order)
 
@@ -82,8 +82,10 @@ Still open: 4, 6, 7, 11 (in-headset connect), 12–21.
     to type locally.
 15. **ADB**: does `adb shell` over USB-C from a Mac (not just a Windows PC)
     reach the Linux side? Does USB power from the Mac cope?
-16. **Tailscale**: can it be installed persistently (Flatpak? a
-    userspace `tailscaled` in `~`?) for access off the home LAN?
+16. ~~**Tailscale**~~: answered 2026-09-25. A userspace `tailscaled` in `~`
+    runs as a lingering user service with no sudo; see [tailscale.md](tailscale.md).
+    Still open: reaching the Frame from outside the home network, and the service
+    starting after a reboot.
 17. **Floating panels in the headset** (see [panels.md](panels.md)): do the
     panels from `panel-on-frame.sh` show up, take input, and offer **Float in
     World** / **Move** / **Size**? Do floating positions survive closing and

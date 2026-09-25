@@ -189,6 +189,89 @@ def headset_view():
             pass  # frame_vrshot.py sweeps leftovers on the next capture
 
 
+# Screenshots taken in the headset with Steam's shortcut. Steam files each under the app
+# it was taken in: userdata/<account>/760/remote/<appid>/screenshots/<file>,
+# with a smaller copy in screenshots/thumbnails/. A shot's id is
+# "<account>/<appid>/<file>", checked here before it goes near a shell.
+SHOT_ROOT = ".local/share/Steam/userdata"
+SHOT_ID = re.compile(r"(\d{1,12})/(\d{1,20})/(\d{14}_\d{1,4}\.(?:jpg|png))")
+SHOTS_DIR = Path.home() / "Pictures" / "SteamFrame"
+LIST_SHOTS = f"""cd ~/{SHOT_ROOT} 2>/dev/null || exit 0
+find . -mindepth 6 -maxdepth 6 -path './*/760/remote/*/screenshots/*' -type f \\
+  \\( -name '*.jpg' -o -name '*.png' \\) -printf '%P\\t%s\\t%T@\\n'"""
+
+
+def shot_path(shot_id, thumb=False):
+    m = SHOT_ID.fullmatch(shot_id) if isinstance(shot_id, str) else None
+    if not m:
+        raise Failure("bad screenshot id", 400)
+    return f"{SHOT_ROOT}/{m[1]}/760/remote/{m[2]}/screenshots/{'thumbnails/' if thumb else ''}{m[3]}"
+
+
+def list_shots():
+    shots = []
+    for line in ssh(LIST_SHOTS, timeout=20).splitlines():
+        rel, _, rest = line.partition("\t")
+        parts = rel.split("/")  # account/760/remote/appid/screenshots/file
+        size, _, mtime = rest.partition("\t")
+        shot_id = f"{parts[0]}/{parts[3]}/{parts[-1]}" if len(parts) == 6 else ""
+        if not SHOT_ID.fullmatch(shot_id) or not size.isdigit():
+            continue
+        try:
+            when = float(mtime)
+        except ValueError:
+            continue
+        local = SHOTS_DIR / parts[-1]
+        shots.append({"id": shot_id, "appid": parts[3], "file": parts[-1], "size": int(size), "time": when,
+                      "saved": local.exists() and local.stat().st_size == int(size)})
+    shots.sort(key=lambda s: s["time"], reverse=True)
+    return {"shots": shots, "folder": str(SHOTS_DIR)}
+
+
+def shot_image(query):
+    q = parse_qs(query)
+    shot_id = (q.get("id") or [""])[0]
+    full = shot_path(shot_id)
+    if q.get("thumb") == ["1"]:
+        # Steam writes the thumbnail a moment after the shot; fall back to the full image.
+        thumb = shot_path(shot_id, thumb=True)
+        remote = f"if [ -s {thumb} ]; then cat {thumb}; else cat {full}; fi"
+    else:
+        remote = f"cat {full}"
+    ctype = "image/png" if shot_id.endswith(".png") else "image/jpeg"
+    return ssh(remote, timeout=30, text=False), ctype
+
+
+def save_shots(body):
+    """Copy screenshots to ~/Pictures/SteamFrame, skipping ones already there."""
+    ids = body.get("ids")
+    if not isinstance(ids, list) or not 0 < len(ids) <= 1000:
+        raise Failure("ids must be a list of 1-1000 screenshot ids", 400)
+    paths = [shot_path(i) for i in ids]
+    todo = [p for p in paths if not (SHOTS_DIR / p.rsplit("/", 1)[-1]).exists()]
+    if todo:
+        SHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_master()
+        # Copy into a hidden folder and move complete files in, so a cut-off
+        # copy never looks saved. -p keeps the time the shot was taken.
+        incoming = Path(tempfile.mkdtemp(prefix=".incoming-", dir=SHOTS_DIR))
+        try:
+            try:
+                r = subprocess.run(["scp", "-p", *SSH[1:], *(f"{FRAME}:{p}" for p in todo), str(incoming)],
+                                   capture_output=True, text=True, timeout=300)
+            except subprocess.TimeoutExpired:
+                raise Failure("Copying screenshots timed out")
+            if r.returncode != 0:
+                raise Failure(strip_ansi(r.stderr).strip() or f"scp exited {r.returncode}")
+            for f in incoming.iterdir():
+                os.replace(f, SHOTS_DIR / f.name)
+        finally:
+            shutil.rmtree(incoming, ignore_errors=True)
+    n, skipped = len(todo), len(ids) - len(todo)
+    msg = f"Saved {n} screenshot{'s' * (n != 1)} to ~/Pictures/SteamFrame"
+    return {"message": msg + (f" ({skipped} already there)" if skipped else ""), "saved": n}
+
+
 def launch(body):
     appid = str(body.get("appid", ""))
     if not APPID.match(appid):
@@ -287,6 +370,10 @@ def open_thing(body):
     if what == "sftp":
         terminal(f"sftp {alias}")
         return {"message": "Opened an SFTP session in Terminal"}
+    if what == "shots":
+        SHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["open", str(SHOTS_DIR)])
+        return {"message": "Opened ~/Pictures/SteamFrame in Finder"}
     raise Failure("unknown target", 400)
 
 
@@ -613,7 +700,7 @@ def android_display(body):
 
 
 POST = {"/api/android/display": android_display, "/api/android": android,"/api/launch": launch, "/api/steam": steam, "/api/volume": set_volume, "/api/clipboard": clipboard,
-        "/api/flatpak": flatpak, "/api/open": open_thing}
+        "/api/flatpak": flatpak, "/api/open": open_thing, "/api/shots/save": save_shots}
 
 
 # ---- HTTP ------------------------------------------------------------------
@@ -679,6 +766,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(steam_frame("owned"))
             elif path == "/api/steam/search":
                 self.send_json(steam_search(url.query))
+            elif path == "/api/shots":
+                self.send_json(list_shots())
+            elif path == "/api/shots/image":
+                self.send_bytes(*shot_image(url.query))
             elif path == "/api/screenshot" and parse_qs(url.query).get("view") == ["headset"]:
                 self.send_bytes(headset_view(), "image/png", headers=[("X-Capture-Source", "steamvr")])
             elif path == "/api/screenshot":

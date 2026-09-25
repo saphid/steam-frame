@@ -191,6 +191,7 @@ showed live status and the library.
 
 | Script | Runs on | Purpose |
 |---|---|---|
+| `scripts/tailscale-on-frame.sh` | Mac → Frame | Install Tailscale in `~` as a userspace user service so `frame` works from anywhere; `--uninstall` (**verified** on the LAN) |
 | `scripts/connect.sh` | Mac | Discover, set up key and `~/.ssh/config`, copy key, optional `--harden` (**verified**; `--harden` untested) |
 | `scripts/install-apps.sh` | Mac → Frame | Install Flatpaks (Remmina, Moonlight, …) on the Frame over SSH as `--user` (**verified** with Remmina) |
 | `scripts/paste-to-frame.sh` | Mac → Frame | Send the Mac clipboard (or stdin) to the Frame clipboard (**verified**) |
@@ -219,8 +220,9 @@ showed live status and the library.
   you've switched to key auth, a short password still protects `sudo` and
   RDP, so pick one that isn't trivially guessable.
 - Don't port-forward 22, 3389, or 5555–5599 from your router. For remote access,
-  use Tailscale (Flatpak/package availability for the Frame hasn't been
-  checked).
+  use Tailscale: `scripts/tailscale-on-frame.sh` (no sudo). In its userspace mode
+  **every** Frame port is reachable from your tailnet, including Steam's DevTools
+  on loopback 8080; see [docs/tailscale.md](docs/tailscale.md).
 
 ## Development
 

@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -81,6 +82,8 @@ class ServerGuards(unittest.TestCase):
         # <img src> and plain form posts from other sites can't set it.
         self.assertEqual(self.request("GET", "/api/status")[0], 403)
         self.assertEqual(self.request("GET", "/api/screenshot?view=headset")[0], 403)
+        self.assertEqual(self.request("GET", "/api/shots")[0], 403)
+        self.assertEqual(self.request("GET", "/api/shots/image?id=1/250820/20260925225208_1.jpg")[0], 403)
         self.assertEqual(self.request("POST", "/api/launch", {"appid": "620"})[0], 403)
 
     def test_captures_are_not_cacheable(self):
@@ -98,10 +101,20 @@ class ServerGuards(unittest.TestCase):
             ("/api/volume", {"level": 1.5}),
             ("/api/clipboard", {"text": ""}),
             ("/api/open", {"what": "anything-else"}),
+            ("/api/shots/save", {"ids": []}),
+            ("/api/shots/save", {"ids": "1/250820/20260925225208_1.jpg"}),
+            ("/api/shots/save", {"ids": [1]}),
+            ("/api/shots/save", {"ids": ["1/250820/../../.ssh/id_ed25519"]}),
+            ("/api/shots/save", {"ids": ["1/250820/20260925225208_1.jpg; rm -rf ~"]}),
         ]
         for path, body in cases:
             status, payload = self.post(path, body)
             self.assertEqual(status, 400, f"{path} {body} -> {payload}")
+
+    def test_screenshot_ids_checked_before_ssh(self):
+        for shot in ("../../etc/passwd", "1/250820/x.jpg", "1/2/20260925225208_1.jpg;id", "1/250820/20260925225208_1.gif"):
+            status, _, _ = self.request("GET", f"/api/shots/image?id={quote(shot)}", headers={"X-Frame-UI": "1"})
+            self.assertEqual(status, 400, shot)
 
     def test_bad_bodies(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)

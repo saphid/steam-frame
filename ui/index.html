@@ -152,6 +152,17 @@
                                                   background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: pointer; }
   .vol .num { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 
+  /* ---- Steam screenshots from the headset ---- */
+  .shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .shot-card { display: flex; flex-direction: column; gap: 6px; }
+  .shot-card .thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: 3px; object-fit: cover; background: rgba(0,0,0,.3);
+                      display: block; cursor: zoom-in; box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+  .shot-card .thumb:hover { box-shadow: 0 6px 16px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.25); }
+  .shot-card .row { flex-wrap: nowrap; }
+  .shot-card .grow { flex: 1; min-width: 0; }
+  .shot-card .t { color: var(--bright); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shot-card .s { color: var(--muted); font-size: 12px; }
+
   /* ---- library shelf (portrait capsules, like Steam's library home) ---- */
   .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
   .capsule { position: relative; aspect-ratio: 2 / 3; border-radius: 3px; overflow: hidden; background: #2a2f38 center/cover no-repeat;
@@ -279,6 +290,7 @@
   </a>
   <nav id="nav">
     <a href="#view" class="on">View</a>
+    <a href="#shots">Shots</a>
     <a href="#library">Library</a>
     <a href="#getgames">Games</a>
     <a href="#android">Android</a>
@@ -368,6 +380,16 @@
       </div>
     </section>
   </div>
+
+  <section id="shots">
+    <div class="shelf-head"><h2>Screenshots</h2><span class="count" id="shotCount"></span><span class="spacer"></span>
+      <button class="small" id="shotsRefresh">Refresh</button>
+      <button class="small" id="shotsFolder" title="Open ~/Pictures/SteamFrame">Show in Finder</button>
+      <button class="action small" id="shotsSaveNew" disabled>Save new to Mac</button>
+    </div>
+    <div class="shot-grid" id="shotGrid"><div class="sub">Loading…</div></div>
+    <div class="hint">Screenshots you take in the headset with Steam's screenshot shortcut. Click one to open it in the viewer; Save copies it to <code>~/Pictures/SteamFrame</code>.</div>
+  </section>
 
   <section id="library">
     <div class="shelf-head"><h2>Library</h2><span class="count" id="gameCount"></span></div>
@@ -556,9 +578,9 @@ const HINTS = {
   headset: "What the lenses show, composited by SteamVR: the room, floating panels, dashboard and controllers. Live refreshes about twice a second. Captures show everything on screen, including anything private.",
   flat: "gamescope's 2D layer: the desktop panel and Steam's flat UI, without the room or VR scene.",
 };
-const SOURCE_LABEL = { steamvr: "Headset view", gamescope: "Desktop panel" };
+const SOURCE_LABEL = { steamvr: "Headset view", gamescope: "Desktop panel", shot: "Screenshot" };
 let state = null, view = "headset", eye = "left", live = false, liveTimer = null, volTimer = null;
-let lastImg = null, lastSource = null;
+let lastImg = null, lastSource = null, lastShot = null, viewGen = 0;
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function gb(n) { return n >= 1e12 ? (n/1e12).toFixed(2) + " TB" : n >= 1e9 ? (n/1e9).toFixed(1) + " GB" : (n/1e6).toFixed(0) + " MB"; }
@@ -792,7 +814,7 @@ document.addEventListener("keydown", e => {
 function draw() {
   const img = lastImg, c = $("canvas");
   // Side-by-side stereo captures: crop to the left half for "one eye".
-  const sbs = lastSource !== "gamescope" && img.naturalWidth >= img.naturalHeight * 1.5;
+  const sbs = lastSource === "steamvr" && img.naturalWidth >= img.naturalHeight * 1.5;
   const crop = sbs && eye === "left";
   const sw = crop ? img.naturalWidth / 2 : img.naturalWidth, sh = img.naturalHeight;
   if (c.width !== sw || c.height !== sh) {
@@ -819,6 +841,7 @@ function isBlank(ctx, w, h) {
   return max - min < 6;
 }
 async function capture() {
+  const gen = viewGen;  // a screenshot opened meanwhile wins over this capture
   if (!live) $("viewer").classList.add("busy");  // no spinner flashing over a live stream
   let url = null;
   try {
@@ -829,7 +852,8 @@ async function capture() {
     url = URL.createObjectURL(await r.blob());
     const img = new Image();
     await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error("not an image")); img.src = url; });
-    lastImg = img; lastSource = source;
+    if (gen !== viewGen) return true;
+    lastImg = img; lastSource = source; lastShot = null;
     draw();
     $("stamp").hidden = false; $("stamp").textContent = new Date().toLocaleTimeString();
     $("saveBtn").disabled = false;
@@ -863,14 +887,17 @@ function toggleLive(on) {
 }
 $("shotBtn").onclick = () => capture();
 $("liveBtn").onclick = () => toggleLive(!live);
-$("saveBtn").onclick = () => $("canvas").toBlob(b => {
+$("saveBtn").onclick = () => lastShot ? download(lastShot.blob, lastShot.file) : $("canvas").toBlob(b => {
   if (!b) return toast("Couldn't encode the image", true);
+  download(b, `frame-${view}-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+}, "image/png");
+function download(blob, name) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(b);
-  a.download = `frame-${view}-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}, "image/png");
+}
 document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => setView(b.dataset.view));
 document.querySelectorAll("[data-eye]").forEach(b => b.onclick = () => setEye(b.dataset.eye));
 
@@ -1382,15 +1409,100 @@ $("repForm").onsubmit = async e => {
 };
 loadReports();
 
+// ---- Steam screenshots from the headset ----
+const shots = { list: [], urls: [] };
+const STEAMVR_APPID = "250820";
+function shotApp(appid) {
+  if (appid === STEAMVR_APPID) return "SteamVR";
+  const g = state?.games?.find(x => x.appid === appid);
+  return g ? g.name : `App ${appid}`;
+}
+async function shotBlob(id, thumb) {
+  const r = await fetch(`/api/shots/image?id=${encodeURIComponent(id)}${thumb ? "&thumb=1" : ""}`,
+                        { headers: {"X-Frame-UI": "1"} });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  return r.blob();
+}
+async function loadShots() {
+  $("shotsRefresh").disabled = true;
+  try {
+    shots.list = (await api("/api/shots")).shots;
+  } catch (e) {
+    $("shotGrid").innerHTML = `<div class="sub">${esc(e.message)}</div>`;
+    return;
+  } finally { $("shotsRefresh").disabled = false; }
+  shots.urls.forEach(URL.revokeObjectURL); shots.urls = [];
+  const unsaved = shots.list.filter(s => !s.saved).length;
+  $("shotCount").textContent = shots.list.length ? `${shots.list.length} on the Frame` + (unsaved ? ` · ${unsaved} not on this Mac` : "") : "";
+  $("shotsSaveNew").disabled = !unsaved;
+  $("shotGrid").innerHTML = shots.list.length ? shots.list.map((s, i) => `<div class="shot-card">
+      <img class="thumb" data-shot="${i}" alt="Screenshot from ${esc(shotApp(s.appid))}" title="Open in the viewer">
+      <div class="row"><div class="grow">
+          <div class="t">${esc(shotApp(s.appid))}</div>
+          <div class="s">${esc(new Date(s.time * 1000).toLocaleString())}</div></div>
+        ${s.saved ? `<span class="tag">On Mac</span>` : `<button class="small" data-shot-save="${i}">Save</button>`}
+      </div></div>`).join("")
+    : `<div class="sub">No screenshots on the Frame yet.</div>`;
+  // Thumbnails one at a time over the shared SSH connection.
+  for (const img of document.querySelectorAll("#shotGrid img[data-shot]")) {
+    const s = shots.list[+img.dataset.shot];
+    try {
+      const url = URL.createObjectURL(await shotBlob(s.id, true));
+      shots.urls.push(url);
+      img.src = url;
+    } catch (e) { img.alt = "Preview failed"; }
+    if (!img.isConnected) return;  // the list was reloaded meanwhile
+  }
+}
+async function openShot(s) {
+  if (live) toggleLive(false);
+  const gen = ++viewGen;
+  $("viewer").classList.add("busy");
+  let url = null;
+  try {
+    const blob = await shotBlob(s.id, false);
+    url = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error("not an image")); img.src = url; });
+    if (gen !== viewGen) return;
+    lastImg = img; lastSource = "shot"; lastShot = { blob, file: s.file };
+    draw();
+    $("srcBadge").textContent = `Screenshot · ${shotApp(s.appid)}`;
+    $("stamp").hidden = false; $("stamp").textContent = new Date(s.time * 1000).toLocaleString();
+    $("saveBtn").disabled = false;
+    $("view").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    toast("Couldn't open the screenshot: " + e.message, true);
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    $("viewer").classList.remove("busy");
+  }
+}
+async function saveShots(list, btn) {
+  if (!list.length) return;
+  const res = await act(`Save ${list.length} screenshot${list.length === 1 ? "" : "s"}`,
+                        () => api("/api/shots/save", { ids: list.map(s => s.id) }), btn);
+  if (res) loadShots();
+}
+$("shotGrid").onclick = e => {
+  const img = e.target.closest("img[data-shot]");
+  if (img) return openShot(shots.list[+img.dataset.shot]);
+  const b = e.target.closest("[data-shot-save]");
+  if (b) saveShots([shots.list[+b.dataset.shotSave]], b);
+};
+$("shotsRefresh").onclick = loadShots;
+$("shotsSaveNew").onclick = e => saveShots(shots.list.filter(s => !s.saved), e.currentTarget);
+$("shotsFolder").onclick = e => act("Show in Finder", () => api("/api/open", { what: "shots" }), e.currentTarget);
+
 // ---- nav highlight follows scroll ----
 const spy = new IntersectionObserver(entries => {
   const top = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
   if (top) document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + top.target.id));
 }, { rootMargin: "-80px 0px -55% 0px" });
-["view", "library", "getgames", "android", "transfer", "apps", "display", "power"].forEach(id => spy.observe($(id)));
+["view", "shots", "library", "getgames", "android", "transfer", "apps", "display", "power"].forEach(id => spy.observe($(id)));
 
 setView("headset");
-refresh();
+refresh().then(loadShots);  // after status, so app names resolve
 setInterval(() => { if (!document.hidden) refresh(); }, 30000);
 </script>
 </body>

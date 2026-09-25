@@ -22,6 +22,7 @@ desktop or panels.
 | See the Frame from the Mac, or the Mac inside the Frame | `docs/streaming.md` | `scripts/run-on-frame.sh mac-screen` |
 | Files and clipboard | `docs/file-transfer.md` | `scripts/push.sh`, `scripts/paste-to-frame.sh` |
 | Android apps (Lepton) | `docs/apks.md` | `scripts/install-apk.sh` |
+| Reach the Frame off the home LAN (Tailscale) | `docs/tailscale.md` | `scripts/tailscale-on-frame.sh` |
 | Install or buy Steam games, Frame ratings | `docs/steam-games.md` | `ui/frame_steam.py` |
 | Flatpaks | `docs/streaming.md` | `scripts/install-apps.sh` |
 | Launch an app inside the desktop panel | the script's header comment | `scripts/run-on-frame.sh` |
