@@ -819,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "not found"}, 404)
         except Failure as e:
             self.send_json({"error": str(e)}, e.status)
+        except frame_android.FrameError as e:
+            self.send_json({"error": str(e)}, 502)
         except Exception as e:
             self.send_json({"error": f"{type(e).__name__}: {e}"}, 500)
 
@@ -845,6 +847,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(e)}, e.status)
         except (ValueError, TypeError) as e:
             self.send_json({"error": f"bad request: {e}"}, 400)
+        except frame_android.FrameError as e:
+            self.send_json({"error": str(e)}, 502)
         except Exception as e:
             self.send_json({"error": f"{type(e).__name__}: {e}"}, 500)
 
