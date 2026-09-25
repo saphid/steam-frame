@@ -36,7 +36,11 @@ build 20260922.6101926, kernel 6.18, aarch64):
   The Frame can reach the Mac's Screen Sharing port (5900). The Remmina
   connection itself hasn't been tried in the headset yet (part of 11).
 
-Still open: 4, 6, 7, 11 (in-headset connect), 12–16.
+- **Panels.** An X11 window on gamescope's `:0` with its own `STEAM_GAME` id
+  gets its own SteamVR overlay (`valve.steam.desktopgame.<id>`). Three were
+  created side by side with `panel-on-frame.sh`. See [panels.md](panels.md).
+
+Still open: 4, 6, 7, 11 (in-headset connect), 12–17.
 
 ## Check on the headset (in order)
 
@@ -80,6 +84,17 @@ Still open: 4, 6, 7, 11 (in-headset connect), 12–16.
     reach the Linux side? Does USB power from the Mac cope?
 16. **Tailscale**: can it be installed persistently (Flatpak? a
     userspace `tailscaled` in `~`?) for access off the home LAN?
+17. **Floating panels in the headset** (see [panels.md](panels.md)): do the
+    panels from `panel-on-frame.sh` show up, take input, and offer **Float in
+    World** / **Move** / **Size**? Do floating positions survive closing and
+    reopening the app, or a reboot?
+18. **`LEPTON_NO_CLEANUP=1 %command%`** as Lepton Development's launch
+    option: do ADB-installed apps survive closing and reopening it?
+19. **Typing in Android apps:** Lepton has no IME installed. Does the SteamVR
+    keyboard or a Bluetooth keyboard reach Android text fields, or does an
+    F-Droid keyboard (installed and enabled with `ime enable`/`ime set`) work?
+20. **F-Droid 2.0** (Compose 1.12): does it run? If so, the catalogue can
+    install it instead of 1.17.2.
 
 ## Unconfirmed claims made in these docs
 

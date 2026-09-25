@@ -1,0 +1,8 @@
+{
+ "org.fdroid.fdroid": {
+  "apk": "https://f-droid.org/archive/org.fdroid.fdroid_1017002.apk",
+  "sha256": "756b7dfc7fb43ef28c27d276428a2f7826cd482fd794bbd9eeaef24016b2081c",
+  "version": "1.17.2",
+  "why": "Pinned to 1.17.2: 1.23.2 crashed (old Compose). 2.0 uses Compose 1.12 but is untested. Don't let it update itself."
+ }
+}

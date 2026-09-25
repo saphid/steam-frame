@@ -1,0 +1,1396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Control</title>
+<style>
+  /* Motiva Sans is Steam's UI font; Valve's CDN serves it with CORS open. */
+  @font-face { font-family: "Motiva Sans"; font-weight: 300; src: url("https://store.fastly.steamstatic.com/public/shared/fonts/MotivaSans-Light.ttf?v=4.015"); }
+  @font-face { font-family: "Motiva Sans"; font-weight: 400; src: url("https://store.fastly.steamstatic.com/public/shared/fonts/MotivaSans-Regular.ttf?v=4.015"); }
+  @font-face { font-family: "Motiva Sans"; font-weight: 500; src: url("https://store.fastly.steamstatic.com/public/shared/fonts/MotivaSans-Medium.ttf?v=4.015"); }
+  @font-face { font-family: "Motiva Sans"; font-weight: 700; src: url("https://store.fastly.steamstatic.com/public/shared/fonts/MotivaSans-Bold.ttf?v=4.015"); }
+
+  :root {
+    /* Steam client palette */
+    --bg: #1b2838; --bg-deep: #0e141b;
+    --text: #dcdedf; --bright: #ffffff; --muted: #8f98a0; --dim: #5e6873;
+    --blue: #1a9fff; --link: #66c0f4;
+    --green: #59bf40; --green-hi: #a4d007;
+    --warn: #d9a23a; --bad: #d94126;
+    --btn: rgba(103, 112, 123, .2); --btn-hi: rgba(103, 112, 123, .45);
+    --play: linear-gradient(to right, #75b022 5%, #588a1b 95%);
+    --play-hi: linear-gradient(to right, #8ed629 5%, #6aa621 95%);
+    --action: linear-gradient(to right, #47bfff 5%, #1a44c2 95%);
+    --action-hi: linear-gradient(to right, #5fcaff 5%, #2458d6 95%);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* class display rules would otherwise win */
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body { margin: 0; color: var(--text); min-height: 100vh; padding-bottom: 46px;
+         font: 14px/1.45 "Motiva Sans", -apple-system, "Segoe UI", Arial, sans-serif;
+         background: radial-gradient(1400px 700px at 15% -15%, #2a475e 0%, transparent 60%),
+                     linear-gradient(180deg, var(--bg) 0%, #16202d 40%, var(--bg-deep) 100%) fixed; }
+  ::selection { background: var(--blue); color: #fff; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #3d4450; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---- top bar (Steam's STORE / LIBRARY / COMMUNITY strip) ---- */
+  header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 30px;
+           height: 64px; padding: 0 28px; background: rgba(23, 29, 37, .94); backdrop-filter: blur(12px);
+           box-shadow: 0 1px 0 rgba(255,255,255,.04), 0 6px 18px rgba(0,0,0,.35); }
+  .brand { display: flex; align-items: center; gap: 11px; color: var(--bright); text-decoration: none; }
+  .brand svg { width: 30px; height: 30px; }
+  .brand b { font-weight: 700; font-size: 15px; letter-spacing: 2.5px; }
+  nav { display: flex; gap: 4px; height: 100%; }
+  nav a { display: flex; align-items: center; padding: 0 13px; height: 100%; color: var(--text); text-decoration: none;
+          font-weight: 500; font-size: 15px; letter-spacing: 1.2px; text-transform: uppercase;
+          border-bottom: 3px solid transparent; transition: color .15s; }
+  nav a:hover { color: var(--bright); }
+  nav a.on { color: var(--blue); border-bottom-color: var(--blue); }
+  .spacer { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 3px;
+          background: var(--btn); color: var(--text); font-size: 13px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px rgba(89,191,64,.8); }
+  .dot.off { background: var(--bad); }
+
+  main { max-width: 1480px; margin: 0 auto; padding: 22px 28px 30px; display: flex; flex-direction: column; gap: 26px; }
+  .grid-top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(330px, 1fr); gap: 22px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
+  @media (max-width: 1150px) { .grid-top, .grid-3 { grid-template-columns: 1fr; } nav { display: none; } }
+
+  /* ---- panels and section headers ---- */
+  .panel { background: linear-gradient(180deg, rgba(42,47,56,.72) 0%, rgba(30,35,41,.9) 100%);
+           border-radius: 4px; padding: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.25); min-width: 0; }
+  .shelf-head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+  .shelf-head h2 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text); }
+  .shelf-head .count { color: var(--muted); font-size: 13px; }
+  .shelf-head .spacer { flex: 1; }
+  .sub { color: var(--muted); font-size: 12.5px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 11px; line-height: 1.5; }
+
+  /* ---- buttons ---- */
+  button { appearance: none; border: 0; border-radius: 3px; padding: 0 14px; height: 34px; font: inherit; font-size: 14px;
+           color: var(--text); background: var(--btn); cursor: pointer; white-space: nowrap;
+           transition: background .12s, color .12s, filter .12s; display: inline-flex; align-items: center; gap: 8px; }
+  button:hover { background: var(--btn-hi); color: var(--bright); }
+  button:active { filter: brightness(.9); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button.action { background: var(--action); color: #fff; font-weight: 500; }
+  button.action:hover { background: var(--action-hi); }
+  button.play { background: var(--play); color: #fff; font-weight: 700; letter-spacing: .5px; }
+  button.play:hover { background: var(--play-hi); }
+  button.danger:hover { background: rgba(217,65,38,.35); color: #fff; }
+  button.small { height: 28px; padding: 0 11px; font-size: 13px; }
+  button.on { background: rgba(26,159,255,.22); color: var(--link); }
+  .seg { display: inline-flex; background: rgba(0,0,0,.3); border-radius: 3px; padding: 2px; }
+  .seg button { background: transparent; height: 28px; font-size: 12.5px; letter-spacing: .6px; text-transform: uppercase; }
+  .seg button.on { background: var(--btn-hi); color: var(--bright); }
+  input[type=text], textarea { width: 100%; background: rgba(0,0,0,.28); color: var(--text); border: 1px solid transparent;
+                               border-radius: 3px; padding: 9px 11px; font: inherit; }
+  textarea { resize: vertical; min-height: 76px; }
+  input:focus, textarea:focus { outline: none; border-color: var(--blue); background: rgba(0,0,0,.4); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* ---- headset view ---- */
+  .viewer { position: relative; aspect-ratio: 16 / 9; max-height: calc(100vh - 190px); margin: 0 auto; background: #000; border-radius: 3px; overflow: hidden;
+            display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); }
+  /* Fit the whole frame; zoom and pan are a transform on top of that. */
+  .viewer canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block;
+                   transform-origin: 0 0; cursor: zoom-in; }
+  .viewer.zoomed canvas { cursor: grab; }
+  .viewer.panning canvas { cursor: grabbing; }
+  .viewer:fullscreen { aspect-ratio: auto; border-radius: 0; }
+  .zoombar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 2px; padding: 2px; border-radius: 3px;
+             background: rgba(0,0,0,.6); }
+  .zoombar button { height: 26px; min-width: 28px; padding: 0 8px; font-size: 13px; background: transparent; justify-content: center; }
+  .zoombar button:hover { background: rgba(255,255,255,.12); }
+  .zoombar .lvl { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .viewer .empty { text-align: center; color: var(--muted); padding: 24px; max-width: 460px; }
+  .viewer .empty svg { width: 64px; height: 64px; opacity: .35; margin-bottom: 10px; }
+  .viewer .badge { position: absolute; left: 12px; top: 12px; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+                   background: rgba(0,0,0,.6); color: var(--text); padding: 4px 9px; border-radius: 2px; }
+  .viewer .badge.live { left: auto; right: 12px; background: var(--bad); color: #fff; font-weight: 700; }
+  .viewer .stamp { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: #c7d5e0;
+                   background: rgba(0,0,0,.6); padding: 3px 8px; border-radius: 2px; }
+  .viewer .asleep { position: absolute; inset: auto 0 0 0; padding: 14px 18px; text-align: center; color: var(--text);
+                    background: linear-gradient(to top, rgba(0,0,0,.85), transparent); font-size: 13px; }
+  .viewer .loading { position: absolute; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.35); }
+  .viewer.busy .loading { display: grid; }
+  .spinner { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.15); border-top-color: var(--blue);
+             border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+
+  /* ---- device ---- */
+  .battery { display: flex; gap: 16px; align-items: center; padding: 16px; border-radius: 3px; background: rgba(0,0,0,.22); }
+  .battery svg { width: 74px; height: 38px; flex: none; }
+  .battery .pct { font-size: 34px; font-weight: 300; color: var(--bright); line-height: 1; font-variant-numeric: tabular-nums; }
+  .battery .state { font-weight: 700; font-size: 13px; letter-spacing: 1.2px; text-transform: uppercase; margin-top: 6px; }
+  .battery .state.charging { color: var(--green-hi); } .battery .state.full { color: var(--green); }
+  .battery .state.low { color: var(--bad); } .battery .state.draining { color: var(--muted); }
+  .battery .detail { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; margin-top: 14px; border-radius: 3px; overflow: hidden; }
+  .stat { background: rgba(0,0,0,.18); padding: 10px 12px; min-width: 0; }
+  .stat .k { color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .stat .v { color: var(--bright); font-size: 17px; margin-top: 1px; font-variant-numeric: tabular-nums;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat .d { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meter { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .meter > i { display: block; width: 0; height: 100%; background: var(--link); transition: width .4s; }
+  .meter > i.warn { background: var(--warn); } .meter > i.bad { background: var(--bad); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+  .chips .chip { height: 26px; font-size: 12px; background: rgba(0,0,0,.22); }
+  .vol { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .vol input[type=range] { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px;
+                           background: linear-gradient(to right, var(--blue) var(--fill, 0%), rgba(255,255,255,.12) var(--fill, 0%)); }
+  .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+                                                  background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: pointer; }
+  .vol .num { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---- library shelf (portrait capsules, like Steam's library home) ---- */
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+  .capsule { position: relative; aspect-ratio: 2 / 3; border-radius: 3px; overflow: hidden; background: #2a2f38 center/cover no-repeat;
+             box-shadow: 0 6px 16px rgba(0,0,0,.45); transition: transform .18s ease, box-shadow .18s ease; }
+  .capsule:hover, .capsule:focus-within { transform: translateY(-4px) scale(1.02); box-shadow: 0 14px 30px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.12); }
+  .capsule .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; text-align: center;
+                       font-weight: 500; color: var(--text); background: linear-gradient(160deg, #3d4450, #1e2329); }
+  .capsule .over { position: absolute; inset: auto 0 0 0; padding: 40px 10px 10px; display: flex; flex-direction: column; gap: 8px;
+                   background: linear-gradient(to top, rgba(0,0,0,.92) 20%, transparent); opacity: 0; transition: opacity .18s; }
+  .capsule:hover .over, .capsule:focus-within .over { opacity: 1; }
+  .capsule .name { font-weight: 700; font-size: 13px; color: #fff; line-height: 1.25; }
+  .capsule .size { color: var(--muted); font-size: 11.5px; }
+  .capsule button { justify-content: center; }
+
+  /* ---- transfer / apps / power ---- */
+  .drop { border: 2px dashed rgba(143,152,160,.35); border-radius: 3px; padding: 24px 16px; text-align: center;
+          color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover { border-color: rgba(143,152,160,.6); }
+  .drop.over { border-color: var(--blue); background: rgba(26,159,255,.08); color: var(--text); }
+  .drop b { display: block; color: var(--bright); font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .progress { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; margin-top: 12px; overflow: hidden; display: none; }
+  .progress > i { display: block; height: 100%; width: 0; background: var(--action); transition: width .2s; }
+  .list .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(255,255,255,.06); }
+  .list .item:first-child { border-top: 0; padding-top: 0; }
+  .item .grow { flex: 1; min-width: 0; }
+  .item .t { color: var(--bright); font-size: 14px; }
+  .item .s { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 7px; border-radius: 2px;
+         background: rgba(0,0,0,.3); color: var(--muted); }
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .actions button { justify-content: flex-start; height: 40px; }
+  .actions svg { width: 16px; height: 16px; flex: none; opacity: .85; }
+  .links { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.06); font-size: 13px; color: var(--muted); }
+  .links a { color: var(--link); text-decoration: none; } .links a:hover { color: #fff; }
+  .links div { margin: 5px 0; }
+
+  /* ---- bottom bar (Steam's DOWNLOADS strip) ---- */
+  .bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: 42px; display: flex; align-items: center; gap: 14px;
+               padding: 0 28px; background: rgba(23,29,37,.96); box-shadow: 0 -1px 0 rgba(255,255,255,.04); cursor: pointer; }
+  .bottombar .label { font-size: 12px; font-weight: 700; letter-spacing: 1.6px; color: var(--muted); }
+  .bottombar .last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; }
+  .bottombar .last.e { color: #ff8a73; }
+  .drawer { position: fixed; left: 0; right: 0; bottom: 42px; z-index: 19; max-height: 0; overflow: hidden;
+            background: rgba(14,20,27,.98); transition: max-height .25s ease; box-shadow: 0 -10px 30px rgba(0,0,0,.5); }
+  .drawer.open { max-height: 300px; }
+  .log { font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace; color: #b8c4d2; max-height: 300px; overflow: auto;
+         white-space: pre-wrap; padding: 12px 28px; }
+  .log:empty::before { content: "Actions you take here are logged with their output."; color: var(--dim); }
+  .log .e { color: #ff8a73; } .log .ok { color: #a4d007; } .log time { color: var(--dim); }
+  .toast { position: fixed; bottom: 58px; right: 28px; z-index: 30; max-width: 460px; padding: 12px 16px; border-radius: 3px;
+           background: #3d4450; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); border-left: 3px solid var(--blue);
+           opacity: 0; transform: translateY(10px); transition: opacity .2s, transform .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: none; }
+  .toast.err { border-left-color: var(--bad); }
+  /* ---- Android ---- */
+  .and-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 22px; align-items: start; }
+  .and-col { display: grid; gap: 22px; align-content: start; }
+  .rep-item .s { white-space: normal; }
+  #repDlg { background: #1e2329; color: var(--text); border: 1px solid rgba(255,255,255,.1); border-radius: 4px;
+            padding: 22px; width: min(560px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  #repDlg::backdrop { background: rgba(0,0,0,.55); }
+  #repDlg h2 { margin: 0 0 14px; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--bright); }
+  #repForm label { display: block; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  #repForm label input[type=text], #repForm textarea { margin-top: 5px; }
+  #repForm fieldset { border: 0; padding: 0; margin: 12px 0 0; }
+  #repForm legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; }
+  #repForm label.opt { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 0 0; color: var(--text); font-size: 13.5px; }
+  #repForm input:invalid:not(:placeholder-shown) { border-color: var(--bad); }
+  .rep-row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+  .rep-file { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .rep-actions { margin-top: 16px; }
+  .and-item { flex-wrap: wrap; }
+  .and-btns { flex-basis: 100%; padding-left: 46px; }
+  .and-icon { width: 36px; height: 36px; border-radius: 8px; flex: none; background: rgba(0,0,0,.25); object-fit: cover; }
+  .cat-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cat-tools input[type=text] { flex: 1 1 240px; width: auto; }
+  .cat-tools select { background: rgba(0,0,0,.28); color: var(--text); border: 1px solid transparent; border-radius: 3px;
+                      padding: 9px 10px; font: inherit; font-size: 13px; max-width: 220px; }
+  .vchips { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px; }
+  .vchip { height: 26px; font-size: 12px; padding: 0 10px; opacity: .55; }
+  .vchip[aria-pressed=true] { opacity: 1; box-shadow: inset 0 0 0 1px currentColor; }
+  .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .cat-card { background: rgba(0,0,0,.2); border-radius: 3px; padding: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cat-card .top { display: flex; gap: 10px; align-items: flex-start; }
+  .cat-card .t { color: var(--bright); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  .cat-card .s { color: var(--muted); font-size: 12px; }
+  .cat-card .why { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+  .cat-card .row { margin-top: auto; }
+  .v-works, .v-likely { color: var(--green-hi); } .v-maybe { color: var(--warn); }
+  .v-unlikely, .v-no { color: var(--bad); }
+  .vbadge { font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase; white-space: nowrap; margin-left: auto; }
+  @media (max-width: 1100px) { .and-grid { grid-template-columns: 1fr; } }
+  /* ---- Steam games (owned + store) ---- */
+  .game-card .art { width: 100%; aspect-ratio: 231 / 87; border-radius: 2px; object-fit: cover; background: rgba(0,0,0,.25); display: block; }
+  .game-card .price { color: var(--bright); font-size: 13px; }
+  .game-card .price s { color: var(--dim); margin-right: 6px; }
+  .game-card .row a { color: var(--link); text-decoration: none; font-size: 13px; }
+  .game-card .row a:hover { color: #fff; }
+  .game-card .bar { height: 3px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; }
+  .game-card .bar > i { display: block; height: 100%; background: var(--action); }
+  .f-0 { color: var(--muted); }
+  /* ---- Android display ---- */
+  .disp select { width: 100%; background: rgba(0,0,0,.28); color: var(--text); border: 1px solid transparent; border-radius: 3px;
+                 padding: 8px 10px; font: inherit; font-size: 13px; }
+  .disp select:focus { outline: none; border-color: var(--blue); }
+  .disp .stats { grid-template-columns: repeat(3, 1fr); margin: 12px 0 4px; }
+  .disp .stat .v { font-size: 15px; }
+  .disp .k2 { color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 12px 0 5px; }
+  .disp .seg { flex-wrap: wrap; }
+  .disp .seg button { padding: 0 10px; }
+  .disp input[type=number] { width: 72px; background: rgba(0,0,0,.28); color: var(--text); border: 1px solid transparent;
+                             border-radius: 3px; height: 32px; padding: 0 8px; font: inherit; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="#view" aria-label="Frame Control">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1a9fff"/><stop offset="1" stop-color="#1a44c2"/></linearGradient></defs>
+      <circle cx="16" cy="16" r="15" fill="url(#lg)"/>
+      <rect x="6.5" y="11" width="19" height="10" rx="4" fill="none" stroke="#fff" stroke-width="2"/>
+      <circle cx="12" cy="16" r="1.8" fill="#fff"/><circle cx="20" cy="16" r="1.8" fill="#fff"/>
+    </svg>
+    <b>FRAME CONTROL</b>
+  </a>
+  <nav id="nav">
+    <a href="#view" class="on">View</a>
+    <a href="#library">Library</a>
+    <a href="#getgames">Games</a>
+    <a href="#android">Android</a>
+    <a href="#transfer">Transfer</a>
+    <a href="#apps">Apps</a>
+    <a href="#display">Display</a>
+    <a href="#power">Power</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="chip" id="conn"><span class="dot"></span><span>Connecting…</span></span>
+  <span class="chip" id="battChip" title="Battery">—</span>
+  <button id="refreshAll" title="Refresh (R)" aria-label="Refresh">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+  </button>
+</header>
+
+<main>
+  <div class="grid-top" id="view">
+    <section class="panel">
+      <div class="toolbar">
+        <div class="seg" aria-label="What to capture">
+          <button data-view="headset" class="on" title="What the headset shows, via the SteamVR compositor">Headset view</button>
+          <button data-view="flat" title="gamescope's 2D layer: the desktop panel and Steam's flat UI">Desktop panel</button>
+        </div>
+        <div class="seg" id="eyeSeg" aria-label="Crop">
+          <button data-eye="left" class="on" title="One eye, like pointing a camera into one lens">Left eye</button>
+          <button data-eye="both" title="Both eyes side by side">Both eyes</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="action" id="shotBtn">Capture</button>
+        <button id="liveBtn" title="Keep capturing">Live</button>
+        <button id="saveBtn" disabled>Save</button>
+      </div>
+      <div class="viewer" id="viewer">
+        <div class="empty" id="viewerEmpty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="4"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/></svg>
+          <div>Press <b>Capture</b> to grab what the Frame is showing, or <b>Live</b> to keep it updating.</div>
+        </div>
+        <canvas id="canvas" hidden></canvas>
+        <span class="badge" id="srcBadge" hidden></span>
+        <span class="badge live" id="liveBadge" hidden>Live</span>
+        <span class="stamp" id="stamp" hidden></span>
+        <div class="zoombar" id="zoombar" hidden>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomFit" class="lvl" title="Fit the whole frame (0)">Fit</button>
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="fullBtn" title="Full screen (F)" aria-label="Full screen">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>
+          </button>
+        </div>
+        <div class="asleep" id="asleep" hidden>The headset is showing a blank frame. It's probably asleep or not being worn. Put it on and capture again.</div>
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+      <div class="hint" id="viewHint"></div>
+    </section>
+
+    <section class="panel" id="device">
+      <div class="shelf-head"><h2>Device</h2><span class="count" id="devName"></span><span class="spacer"></span><span class="sub" id="updated"></span></div>
+      <div class="battery">
+        <svg viewBox="0 0 74 38" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="64" height="35" rx="5" fill="none" stroke="#8f98a0" stroke-width="3"/>
+          <rect x="67" y="12" width="5.5" height="14" rx="2" fill="#8f98a0"/>
+          <rect id="battFill" x="6" y="6" width="0" height="26" rx="2.5" fill="#59bf40"/>
+          <path id="battBolt" d="M37 5 L27 21 H34 L31 33 L42 16 H35 Z" fill="#fff" stroke="#1e2329" stroke-width="1.6" stroke-linejoin="round" visibility="hidden"/>
+        </svg>
+        <div style="min-width:0">
+          <div class="pct" id="battPct">—</div>
+          <div class="state draining" id="battState">&nbsp;</div>
+          <div class="detail" id="battDetail">&nbsp;</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Storage free</div><div class="v" id="sDisk">—</div><div class="meter"><i id="mDisk"></i></div></div>
+        <div class="stat"><div class="k">Memory used</div><div class="v" id="sMem">—</div><div class="meter"><i id="mMem"></i></div></div>
+        <div class="stat"><div class="k">Temperature</div><div class="v" id="sTemp">—</div><div class="d" id="dTemp">&nbsp;</div></div>
+        <div class="stat"><div class="k">Wi-Fi</div><div class="v" id="sWifi">—</div><div class="d" id="dWifi">&nbsp;</div></div>
+        <div class="stat"><div class="k">Uptime</div><div class="v" id="sUp">—</div><div class="d" id="dUp">&nbsp;</div></div>
+        <div class="stat"><div class="k">SteamOS</div><div class="v" id="sOs">—</div><div class="d" id="dOs">&nbsp;</div></div>
+      </div>
+      <div class="chips" id="services"></div>
+      <div class="vol">
+        <button class="small" id="muteBtn" aria-label="Mute">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path id="volWaves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <input type="range" id="vol" min="0" max="100" step="1" value="0" aria-label="Volume">
+        <span class="num" id="volNum">—</span>
+      </div>
+    </section>
+  </div>
+
+  <section id="library">
+    <div class="shelf-head"><h2>Library</h2><span class="count" id="gameCount"></span></div>
+    <div class="shelf" id="games"><div class="sub">Loading…</div></div>
+  </section>
+
+
+  <section id="getgames">
+    <div class="shelf-head"><h2>Get games</h2><span class="count" id="gmCount"></span><span class="spacer"></span>
+      <span class="sub" id="gmDl"></span></div>
+    <div class="panel">
+      <div class="cat-tools">
+        <div class="seg" id="gmSrc" aria-label="Where to look">
+          <button data-src="owned" class="on">Your games</button>
+          <button data-src="store">Steam store</button>
+        </div>
+        <input type="text" id="gmQ" placeholder="Filter your games…">
+        <button class="small" id="gmReload" title="Read the library again, e.g. after buying something">Refresh</button>
+      </div>
+      <div class="vchips" id="gmChips"></div>
+      <div class="cat-grid" id="gmGrid"><div class="sub">Loading your library…</div></div>
+      <div class="row" style="margin-top:12px"><button class="small" id="gmMore" hidden>Show more</button></div>
+      <div class="hint">Install downloads a game you own straight to the Frame and accepts Steam's default options;
+        EULAs and license prompts still need answering in the headset. To buy, open the store page in your browser
+        (signed in to Steam) or in the headset, then Refresh and install. Ratings are Valve's Steam Frame
+        compatibility categories.</div>
+    </div>
+  </section>
+
+  <section id="android">
+    <div class="shelf-head"><h2>Android apps</h2><span class="count" id="andCount"></span><span class="spacer"></span>
+      <button class="action small" id="repNew" title="Report how any APK worked on the Frame">+ Report an APK</button></div>
+    <div class="and-grid">
+      <div class="and-col">
+      <div class="panel">
+        <div class="shelf-head"><h2>On the Frame</h2></div>
+        <div class="list" id="andApps"><div class="sub">Loading…</div></div>
+        <div class="hint">Each app runs in its own Lepton instance and keeps its data. It's in the Steam
+          library under its own name and opens in its own panel. Test launches it and records
+          whether it stays up; Report records how it worked for you.</div>
+      </div>
+      <div class="panel">
+        <div class="shelf-head"><h2>Recent reports</h2><span class="count" id="repCount"></span></div>
+        <div class="list" id="repList"><div class="sub">Loading…</div></div>
+        <div class="hint">Reports go to Frame Control's private compatibility database and change the
+          verdicts in the catalogue. Any APK can be reported, including ones not on F-Droid.</div>
+      </div>
+      </div>
+      <div class="panel">
+        <div class="shelf-head"><h2>Find apps</h2><span class="count" id="catCount"></span></div>
+        <div class="cat-tools">
+          <input type="text" id="catQ" placeholder="Search F-Droid apps rated for the Frame…">
+          <select id="catCat" aria-label="Category"><option value="">All categories</option></select>
+        </div>
+        <div class="vchips" id="catChips"></div>
+        <div class="cat-grid" id="catGrid"><div class="sub">Loading the catalogue…</div></div>
+        <div class="row" style="margin-top:12px"><button class="small" id="catMore" hidden>Show more</button></div>
+        <div class="hint">Verdicts come from checks of each APK against what Lepton supports (Android 11,
+          64-bit ARM, no clipboard or Play Services) and from reports made on a Frame. See docs/apks.md.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid-3">
+    <section class="panel" id="transfer">
+      <div class="shelf-head"><h2>Send to Frame</h2></div>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to send">
+        <b>Drop files here</b>
+        Files land in <code>~/Downloads</code>. <code>.apk</code> files install as their own Android app.
+        <input type="file" id="fileInput" multiple hidden>
+      </div>
+      <div class="progress" id="prog"><i></i></div>
+      <textarea id="clipText" style="margin-top:16px" placeholder="Text to put on the Frame's clipboard…"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="action small" id="clipSend">Send text</button>
+        <button class="small" id="clipMac">Send Mac clipboard</button>
+      </div>
+      <div class="hint">Clipboard needs the desktop panel open in the headset.</div>
+    </section>
+
+    <section class="panel" id="apps">
+      <div class="shelf-head"><h2>Linux apps</h2><span class="count">Flatpak</span></div>
+      <div class="list" id="flatpaks"><div class="sub">Loading…</div></div>
+      <div class="row" style="margin-top:14px; flex-wrap:nowrap">
+        <input type="text" id="fpId" placeholder="Flathub ID, e.g. org.mozilla.firefox">
+        <button class="action" id="fpInstall">Install</button>
+      </div>
+      <div class="row" style="margin-top:8px" id="fpQuick"></div>
+    </section>
+
+    <section class="panel disp" id="display">
+      <div class="shelf-head"><h2>Android display</h2><span class="count">Lepton</span><span class="spacer"></span>
+        <button class="small" id="dispReload" title="Read the current values again">Refresh</button></div>
+      <select id="dispSel" aria-label="Lepton instance"><option>Loading…</option></select>
+      <div class="stats">
+        <div class="stat"><div class="k">Resolution</div><div class="v" id="dispSize">—</div><div class="d" id="dispSizeD">&nbsp;</div></div>
+        <div class="stat"><div class="k">UI scale</div><div class="v" id="dispDens">—</div><div class="d" id="dispDensD">&nbsp;</div></div>
+        <div class="stat"><div class="k">Text size</div><div class="v" id="dispFont">—</div><div class="d" id="dispFontD">&nbsp;</div></div>
+      </div>
+      <div class="k2">Resolution</div>
+      <div class="seg" id="dispRes" aria-label="Resolution">
+        <button data-res="native" title="1920×1080, Lepton's panel size">Native 1920×1080</button>
+        <button data-res="sharp" title="More Android pixels in the same panel; UI scale is raised to match">Sharp 2560×1440</button>
+      </div>
+      <div class="k2">UI scale</div>
+      <div class="row">
+        <div class="seg" id="dispScale" aria-label="UI scale">
+          <button data-scale="0.85">Smaller</button><button data-scale="1">Default</button><button data-scale="1.15">Larger</button>
+        </div>
+        <input type="number" id="dispDpi" min="120" max="640" step="1" aria-label="Density in dpi" title="Density (dpi), 120–640">
+        <button class="small" id="dispDpiSet">Set dpi</button>
+      </div>
+      <div class="k2">Text size</div>
+      <div class="seg" id="dispText" aria-label="Text size">
+        <button data-font="0.85">0.85×</button><button data-font="1">1.0×</button><button data-font="1.15">1.15×</button><button data-font="1.3">1.3×</button>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="small danger" id="dispReset" title="wm size reset, wm density reset, and clear font_scale">Reset all</button></div>
+      <div class="hint">Changes apply at once, and the app may redraw or restart its screen. They may not survive the app
+        relaunching (not yet verified). Sharp gives Android more pixels in the same panel, which should make text crisper.</div>
+    </section>
+
+    <section class="panel" id="power">
+      <div class="shelf-head"><h2>Remote &amp; power</h2></div>
+      <div class="actions">
+        <button data-open="terminal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg>SSH</button>
+        <button data-open="sftp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>SFTP</button>
+        <button data-open="steamlink"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>Steam Link</button>
+        <button data-open="rdp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>Remote desktop</button>
+        <button data-open="suspend" data-confirm="Put the Frame to sleep?"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>Sleep</button>
+        <button data-open="reboot" data-confirm="Restart the Frame?"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>Restart</button>
+        <button data-open="poweroff" data-confirm="Shut the Frame down?" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>Shut down</button>
+      </div>
+      <div class="hint">Sleep, Restart and Shut down open Terminal for the Developer Mode password.</div>
+      <div class="links">
+        <div><a href="https://store.steampowered.com/remoteplay" target="_blank">Steam Link</a>: Valve's remote view of the headset</div>
+        <div><a href="https://streamframe.app/" target="_blank">Stream Frame</a>: third-party recorder (macOS 14+)</div>
+        <div><a href="https://framedropvr.com" target="_blank">FrameDrop</a>: sideloader (Windows only for now)</div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="drawer" id="drawer"><div class="log" id="log"></div></div>
+<div class="bottombar" id="bottombar" role="button" aria-label="Show activity">
+  <span class="label">ACTIVITY</span>
+  <span class="last" id="lastLog">Ready</span>
+  <span class="sub" id="drawerHint">Show ▴</span>
+</div>
+<dialog id="repDlg" aria-labelledby="repTitle">
+  <form method="dialog" id="repForm">
+    <h2 id="repTitle">Report an APK</h2>
+    <div class="rep-file"><button type="button" class="small" id="repPick">Read details from an .apk file…</button>
+      <input type="file" id="repFile" accept=".apk" hidden><span class="sub" id="repFileNote"></span></div>
+    <label>App name<input type="text" id="repLabel" placeholder="e.g. AntennaPod" maxlength="120"></label>
+    <label>Package<input type="text" id="repPkg" placeholder="e.g. de.danoeh.antennapod" required
+      pattern="[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+" maxlength="200" list="repPkgs"></label>
+    <datalist id="repPkgs"></datalist>
+    <div class="rep-row">
+      <label>Version<input type="text" id="repVer" placeholder="e.g. 3.12.2" maxlength="80"></label>
+      <label>Where it came from<input type="text" id="repSrc" placeholder="F-Droid, APKMirror, GitHub, own build…" maxlength="300"></label>
+    </div>
+    <fieldset><legend>Did it work?</legend>
+      <label class="opt"><input type="radio" name="repRating" value="works" required> <span class="v-works">Works</span></label>
+      <label class="opt"><input type="radio" name="repRating" value="issues"> <span class="v-maybe">Works, with problems</span></label>
+      <label class="opt"><input type="radio" name="repRating" value="broken"> <span class="v-no">Doesn't work</span></label>
+    </fieldset>
+    <fieldset><legend>How did you run it?</legend>
+      <label class="opt"><input type="radio" name="repRuntime" value="instance" checked> Own instance (Frame Control)</label>
+      <label class="opt"><input type="radio" name="repRuntime" value="lepton-dev"> Lepton Development</label>
+      <label class="opt"><input type="radio" name="repRuntime" value="other"> Other</label>
+    </fieldset>
+    <label>Notes<textarea id="repNotes" maxlength="1000" placeholder="What works, what doesn't, crash messages, settings you changed…"></textarea></label>
+    <div class="row rep-actions"><span class="sub" id="repMsg"></span><span class="spacer"></span>
+      <button type="button" class="small" id="repCancel">Cancel</button>
+      <button type="submit" class="action small" id="repSave">Save report</button></div>
+  </form>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const QUICK = [["Remmina", "org.remmina.Remmina"], ["Moonlight", "com.moonlight_stream.Moonlight"],
+               ["Firefox", "org.mozilla.firefox"], ["VLC", "org.videolan.VLC"]];
+const CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps";
+const HINTS = {
+  headset: "What the lenses show, composited by SteamVR: the room, floating panels, dashboard and controllers. Live refreshes about twice a second. Captures show everything on screen, including anything private.",
+  flat: "gamescope's 2D layer: the desktop panel and Steam's flat UI, without the room or VR scene.",
+};
+const SOURCE_LABEL = { steamvr: "Headset view", gamescope: "Desktop panel" };
+let state = null, view = "headset", eye = "left", live = false, liveTimer = null, volTimer = null;
+let lastImg = null, lastSource = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function gb(n) { return n >= 1e12 ? (n/1e12).toFixed(2) + " TB" : n >= 1e9 ? (n/1e9).toFixed(1) + " GB" : (n/1e6).toFixed(0) + " MB"; }
+function dur(s) { const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+                  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`; }
+function meter(el, pct, warnAt, badAt) {
+  el.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  el.className = pct >= badAt ? "bad" : pct >= warnAt ? "warn" : "";
+}
+
+function log(msg, kind = "") {
+  const line = document.createElement("div");
+  line.className = kind;
+  line.innerHTML = `<time>${new Date().toLocaleTimeString()}</time>  ${esc(msg)}`;
+  $("log").prepend(line);
+  while ($("log").childElementCount > 200) $("log").lastElementChild.remove();
+  $("lastLog").textContent = msg.split("\n")[0];
+  $("lastLog").className = "last " + kind;
+}
+let toastTimer;
+function toast(msg, err = false) {
+  const el = $("toast");
+  el.textContent = msg.split("\n").slice(-1)[0] || msg;
+  el.className = "toast show" + (err ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = "toast" + (err ? " err" : ""), 3500);
+}
+$("bottombar").onclick = () => {
+  const open = $("drawer").classList.toggle("open");
+  $("drawerHint").textContent = open ? "Hide ▾" : "Show ▴";
+};
+
+async function api(path, body) {
+  const opts = body === undefined ? { headers: {"X-Frame-UI": "1"} } : {
+    method: "POST", headers: {"Content-Type": "application/json", "X-Frame-UI": "1"}, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+async function act(label, fn, btn) {
+  if (btn) btn.disabled = true;
+  log(label + "…");
+  try {
+    const res = await fn();
+    const msg = (res && res.message) || "Done";
+    log(msg, "ok"); toast(msg);
+    return res;
+  } catch (e) {
+    log(`${label} failed: ${e.message}`, "e"); toast(`${label} failed: ${e.message}`, true);
+  } finally { if (btn) btn.disabled = false; }
+}
+
+function setConn(ok, text) {
+  $("conn").innerHTML = `<span class="dot ${ok ? "on" : "off"}"></span><span>${esc(text)}</span>`;
+}
+
+async function refresh() {
+  $("refreshAll").disabled = true;
+  try {
+    state = await api("/api/status");
+    render(state);
+    setConn(true, state.hostname);
+  } catch (e) {
+    setConn(false, "Offline");
+    $("battChip").textContent = "—";
+    log("Status failed: " + e.message, "e");
+  } finally { $("refreshAll").disabled = false; }
+}
+
+// ---- battery ----
+function battery(b, power) {
+  const pct = b?.percent;
+  const full = b?.status === "Full" || (!!power && pct >= 100);
+  const charging = !full && b?.status === "Charging";
+  // A weak charger can lose to the load: plugged in but still draining.
+  const draining = !full && !charging && (!power || b?.status === "Discharging" || b?.watts < 0);
+  const low = !charging && !full && pct != null && pct <= 15;
+  const color = full || charging ? "#59bf40" : low ? "#d94126" : pct != null && pct <= 30 ? "#d9a23a" : "#dcdedf";
+  $("battFill").setAttribute("width", pct == null ? 0 : (55 * Math.min(100, Math.max(0, pct)) / 100).toFixed(1));
+  $("battFill").setAttribute("fill", color);
+  $("battBolt").setAttribute("visibility", charging ? "visible" : "hidden");
+  $("battPct").textContent = pct == null ? "—" : `${pct}%`;
+
+  let label, cls, detail = [];
+  if (!b) { label = "Battery unknown"; cls = "draining"; }
+  else if (full) { label = "Fully charged"; cls = "full"; }
+  else if (charging) {
+    label = b.watts > 0 ? `Charging · ${b.watts.toFixed(1)} W` : "Charging"; cls = "charging";
+    if (b.timeToFull > 0) detail.push(`Full in ${dur(b.timeToFull)}`);
+  } else if (!draining) { label = "Plugged in, not charging"; cls = "draining"; }
+  else {
+    label = low ? "Battery low" : power ? "Plugged in, still draining" : "On battery";
+    cls = low ? "low" : "draining";
+    if (b?.watts < 0) detail.push(`Using ${Math.abs(b.watts).toFixed(1)} W`);
+    if (b?.timeToEmpty > 0 && b.timeToEmpty < 86400) detail.push(`About ${dur(b.timeToEmpty)} left`);
+  }
+  if (power) detail.push(`${/PD/.test(power.type || "") ? "USB-C PD" : power.type || "Charger"}${power.watts ? ` ${Math.round(power.watts)} W` : ""}`);
+  if (b?.tempC != null) detail.push(`${b.tempC.toFixed(0)}°C`);
+  $("battState").textContent = label;
+  $("battState").className = "state " + cls;
+  $("battDetail").textContent = detail.join(" · ") || " ";
+
+  const bolt = charging ? `<svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"><path d="M6 0L0 8h4l-1 6 7-8H6z" fill="#a4d007"/></svg>` : "";
+  const chipPct = pct == null ? 0 : Math.min(100, Math.max(0, pct));
+  $("battChip").innerHTML = pct == null ? "—" :
+    `<svg width="22" height="12" viewBox="0 0 22 12" aria-hidden="true"><rect x=".75" y=".75" width="18" height="10.5" rx="2" fill="none" stroke="#8f98a0" stroke-width="1.5"/><rect x="19.8" y="3.5" width="1.8" height="5" rx=".6" fill="#8f98a0"/><rect x="2.5" y="2.5" width="${(14.5 * chipPct / 100).toFixed(1)}" height="7" rx="1" fill="${color}"/></svg>${bolt}<span>${pct}%</span>`;
+  $("battChip").title = label;
+}
+
+function render(s) {
+  battery(s.battery, s.power);
+  $("devName").textContent = `${s.hostname} · ${s.ip ?? "no IP"}`;
+  $("updated").textContent = new Date(s.time * 1000).toLocaleTimeString();
+  const h = s.disk.home;
+  if (h) { $("sDisk").textContent = gb(h.free); meter($("mDisk"), 100 * (1 - h.free / h.total), 80, 92); }
+  const m = s.memory;
+  if (m) { const used = m.total - m.available; $("sMem").textContent = `${gb(used)} / ${gb(m.total)}`; meter($("mMem"), 100 * used / m.total, 75, 90); }
+  $("sTemp").textContent = s.temp == null ? "—" : `${s.temp.toFixed(0)}°C`;
+  $("dTemp").textContent = s.temp == null ? "" : s.temp > 75 ? "Running hot" : s.temp > 60 ? "Warm" : "Normal";
+  $("sWifi").textContent = s.wifi ? `${s.wifi.signal ?? "?"}%` : "—";
+  $("dWifi").textContent = s.wifi?.ssid ?? "Not on Wi-Fi";
+  $("sUp").textContent = s.uptime ? dur(s.uptime) : "—";
+  $("dUp").textContent = "since boot";
+  $("sOs").textContent = s.os.version ?? "—";
+  $("dOs").textContent = s.os.build ? `build ${s.os.build}` : "";
+
+  const svc = [["SteamVR", s.services.steamvr], ["Desktop", s.services.desktop],
+               ["Lepton", s.services.lepton], ["RDP", s.services.rdp]];
+  $("services").innerHTML = svc.map(([n, on]) => `<span class="chip"><span class="dot ${on ? "on" : ""}"></span>${esc(n)}</span>`).join("");
+
+  if (s.volume && !volTimer) setVolume(Math.round(s.volume.level * 100), s.volume.muted);
+
+  const games = s.games.filter(g => /^\d+$/.test(g.appid));  // appid goes into image URLs
+  $("gameCount").textContent = `(${games.length})`;
+  $("games").innerHTML = games.length ? games.map(g => `
+    <div class="capsule" data-appid="${g.appid}">
+      <div class="fallback">${esc(g.name)}</div>
+      <div class="over">
+        <div class="name">${esc(g.name)}</div>
+        <div class="size">${gb(g.size)}</div>
+        <button class="play small" data-launch="${g.appid}" data-name="${esc(g.name)}">▶ PLAY</button>
+      </div>
+    </div>`).join("") : `<div class="sub">No games installed.</div>`;
+  // Tall library art, falling back to the wide header, then to the name card.
+  $("games").querySelectorAll(".capsule").forEach(c => {
+    const id = c.dataset.appid;
+    const tryArt = (urls) => {
+      if (!urls.length) return;
+      const img = new Image();
+      img.onload = () => { c.style.backgroundImage = `url("${urls[0]}")`; c.querySelector(".fallback").hidden = true; };
+      img.onerror = () => tryArt(urls.slice(1));
+      img.src = urls[0];
+    };
+    tryArt([`${CDN}/${id}/library_600x900.jpg`, `${CDN}/${id}/header.jpg`]);
+  });
+
+  $("flatpaks").innerHTML = s.flatpaks.length ? s.flatpaks.map(f => `
+    <div class="item">
+      <div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${esc(f.id)} · ${esc(f.version || "")}</div></div>
+      <span class="tag">${esc(f.installation)}</span>
+      ${f.installation === "user" ? `<button class="small danger" data-uninstall="${esc(f.id)}" data-name="${esc(f.name)}">Remove</button>` : ""}
+    </div>`).join("") : `<div class="sub">No Flatpak apps.</div>`;
+  const have = new Set(s.flatpaks.map(f => f.id));
+  $("fpQuick").innerHTML = QUICK.filter(([, id]) => !have.has(id))
+    .map(([n, id]) => `<button class="small" data-quick="${esc(id)}">+ ${esc(n)}</button>`).join("");
+}
+
+// ---- view ----
+function setView(v) {
+  view = v;
+  document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  $("eyeSeg").style.visibility = v === "headset" ? "visible" : "hidden";
+  $("viewHint").textContent = HINTS[v];
+}
+function setEye(e) {
+  eye = e;
+  document.querySelectorAll("[data-eye]").forEach(b => b.classList.toggle("on", b.dataset.eye === e));
+  if (lastImg) draw();
+}
+// ---- zoom and pan (1 = fit the whole frame in the viewer) ----
+let zoom = 1, panX = 0, panY = 0;
+function setZoom(z, cx, cy) {
+  const v = $("viewer").getBoundingClientRect();
+  z = Math.min(8, Math.max(1, z));
+  // Keep the point under the cursor (or the centre) fixed while zooming.
+  cx ??= v.width / 2; cy ??= v.height / 2;
+  panX = cx - (cx - panX) * z / zoom; panY = cy - (cy - panY) * z / zoom;
+  zoom = z;
+  if (zoom === 1) panX = panY = 0;
+  // Don't let the image slide out of view.
+  panX = Math.min(0, Math.max(v.width - v.width * zoom, panX));
+  panY = Math.min(0, Math.max(v.height - v.height * zoom, panY));
+  $("canvas").style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  $("zoomFit").textContent = zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`;
+  $("viewer").classList.toggle("zoomed", zoom > 1);
+}
+$("zoomIn").onclick = () => setZoom(zoom * 1.5);
+$("zoomOut").onclick = () => setZoom(zoom / 1.5);
+$("zoomFit").onclick = () => setZoom(1);
+$("fullBtn").onclick = () => document.fullscreenElement ? document.exitFullscreen() : $("viewer").requestFullscreen();
+document.addEventListener("fullscreenchange", () => setZoom(1));
+$("viewer").addEventListener("wheel", e => {
+  if ($("canvas").hidden) return;
+  e.preventDefault();
+  const v = $("viewer").getBoundingClientRect();
+  setZoom(zoom * Math.exp(-e.deltaY * 0.002), e.clientX - v.left, e.clientY - v.top);
+}, { passive: false });
+$("canvas").addEventListener("dblclick", e => {
+  const v = $("viewer").getBoundingClientRect();
+  setZoom(zoom > 1 ? 1 : 2.5, e.clientX - v.left, e.clientY - v.top);
+});
+$("canvas").addEventListener("pointerdown", e => {
+  if (zoom === 1) return;
+  const start = { x: e.clientX - panX, y: e.clientY - panY };
+  $("viewer").classList.add("panning");
+  $("canvas").setPointerCapture(e.pointerId);
+  const move = ev => { panX = ev.clientX - start.x; panY = ev.clientY - start.y; setZoom(zoom); };
+  const up = () => { $("viewer").classList.remove("panning"); $("canvas").removeEventListener("pointermove", move); };
+  $("canvas").addEventListener("pointermove", move);
+  $("canvas").addEventListener("pointerup", up, { once: true });
+});
+document.addEventListener("keydown", e => {
+  if ($("canvas").hidden || /INPUT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey) return;
+  if (e.key === "+" || e.key === "=") setZoom(zoom * 1.5);
+  else if (e.key === "-") setZoom(zoom / 1.5);
+  else if (e.key === "0") setZoom(1);
+  else if (e.key === "f") $("fullBtn").click();
+});
+
+function draw() {
+  const img = lastImg, c = $("canvas");
+  // Side-by-side stereo captures: crop to the left half for "one eye".
+  const sbs = lastSource !== "gamescope" && img.naturalWidth >= img.naturalHeight * 1.5;
+  const crop = sbs && eye === "left";
+  const sw = crop ? img.naturalWidth / 2 : img.naturalWidth, sh = img.naturalHeight;
+  if (c.width !== sw || c.height !== sh) {
+    c.width = sw; c.height = sh;
+    $("viewer").style.aspectRatio = `${sw} / ${sh}`;  // one eye is taller than wide
+    setZoom(1);
+  }
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0, sw, sh, 0, 0, sw, sh);
+  $("asleep").hidden = lastSource !== "steamvr" || !isBlank(ctx, sw, sh);
+  c.hidden = false; $("viewerEmpty").hidden = true; $("zoombar").hidden = false;
+  $("srcBadge").hidden = false;
+  $("srcBadge").textContent = SOURCE_LABEL[lastSource] + (crop ? " · left eye" : "");
+}
+// A sleeping headset renders a flat near-black frame; sample a grid to spot it.
+function isBlank(ctx, w, h) {
+  const px = ctx.getImageData(0, 0, w, h).data;
+  let min = 255, max = 0;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const i = (Math.floor((y + .5) * h / 16) * w + Math.floor((x + .5) * w / 16)) * 4;
+    const l = (px[i] + px[i + 1] + px[i + 2]) / 3;
+    min = Math.min(min, l); max = Math.max(max, l);
+  }
+  return max - min < 6;
+}
+async function capture() {
+  if (!live) $("viewer").classList.add("busy");  // no spinner flashing over a live stream
+  let url = null;
+  try {
+    const r = await fetch(view === "headset" ? "/api/screenshot?view=headset" : "/api/screenshot",
+                          { headers: {"X-Frame-UI": "1"} });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    const source = r.headers.get("X-Capture-Source") || "gamescope";
+    url = URL.createObjectURL(await r.blob());
+    const img = new Image();
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error("not an image")); img.src = url; });
+    lastImg = img; lastSource = source;
+    draw();
+    $("stamp").hidden = false; $("stamp").textContent = new Date().toLocaleTimeString();
+    $("saveBtn").disabled = false;
+    return true;
+  } catch (e) {
+    log("Capture failed: " + e.message, "e");
+    if (!live) toast("Capture failed: " + e.message, true);
+    return false;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    $("viewer").classList.remove("busy");
+  }
+}
+let liveFailures = 0;
+async function liveLoop() {
+  if (!live) return;
+  liveFailures = (await capture()) ? 0 : liveFailures + 1;
+  if (liveFailures >= 5) {
+    toggleLive(false);
+    toast("Live stopped after 5 failed captures. Is the headset on?", true);
+    return;
+  }
+  if (live) liveTimer = setTimeout(liveLoop, view === "headset" ? 300 : 700);
+}
+function toggleLive(on) {
+  live = on;
+  liveFailures = 0;
+  $("liveBtn").classList.toggle("on", live);
+  $("liveBadge").hidden = !live;
+  if (live) liveLoop(); else clearTimeout(liveTimer);
+}
+$("shotBtn").onclick = () => capture();
+$("liveBtn").onclick = () => toggleLive(!live);
+$("saveBtn").onclick = () => $("canvas").toBlob(b => {
+  if (!b) return toast("Couldn't encode the image", true);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b);
+  a.download = `frame-${view}-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}, "image/png");
+document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => setView(b.dataset.view));
+document.querySelectorAll("[data-eye]").forEach(b => b.onclick = () => setEye(b.dataset.eye));
+
+// ---- controls ----
+$("refreshAll").onclick = refresh;
+document.addEventListener("keydown", e => {
+  if (e.key === "r" && !e.metaKey && !e.ctrlKey && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) refresh();
+});
+document.body.addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.launch) act(`Launch ${b.dataset.name}`, () => api("/api/launch", { appid: b.dataset.launch }), b);
+  else if (b.dataset.uninstall) {
+    if (confirm(`Remove ${b.dataset.name} from the Frame?`))
+      act(`Remove ${b.dataset.name}`, () => api("/api/flatpak", { action: "uninstall", id: b.dataset.uninstall }), b).then(refresh);
+  } else if (b.dataset.quick) installFlatpak(b.dataset.quick, b);
+  else if (b.dataset.open) {
+    if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+    act(b.textContent.trim(), () => api("/api/open", { what: b.dataset.open }), b);
+  }
+});
+function installFlatpak(id, btn) {
+  toast(`Installing ${id}. This can take a few minutes…`);
+  return act(`Install ${id}`, () => api("/api/flatpak", { action: "install", id }), btn).then(refresh);
+}
+$("fpInstall").onclick = () => { const id = $("fpId").value.trim(); if (id) installFlatpak(id, $("fpInstall")); };
+$("fpId").addEventListener("keydown", e => { if (e.key === "Enter") $("fpInstall").click(); });
+
+function setVolume(pct, muted) {
+  $("vol").value = pct;
+  $("vol").style.setProperty("--fill", pct + "%");
+  $("volNum").textContent = pct + "%";
+  if (muted !== undefined) $("volWaves").style.display = muted ? "none" : "";
+}
+$("vol").oninput = () => {
+  setVolume(+$("vol").value);
+  clearTimeout(volTimer);
+  volTimer = setTimeout(async () => {
+    try { await api("/api/volume", { level: $("vol").value / 100 }); } catch (e) { toast(e.message, true); }
+    volTimer = null;
+  }, 250);
+};
+$("muteBtn").onclick = () => {
+  const muted = !(state?.volume?.muted);
+  act(muted ? "Mute" : "Unmute", () => api("/api/volume", { muted }), $("muteBtn")).then(refresh);
+};
+$("clipSend").onclick = () => {
+  const text = $("clipText").value;
+  if (!text) return toast("Nothing to send", true);
+  act("Send text to clipboard", () => api("/api/clipboard", { text }), $("clipSend"));
+};
+$("clipMac").onclick = () => act("Send Mac clipboard", () => api("/api/clipboard", { fromMac: true }), $("clipMac"));
+
+// ---- file drop ----
+const drop = $("drop");
+drop.onclick = () => $("fileInput").click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fileInput").click(); } };
+$("fileInput").onchange = () => sendFiles([...$("fileInput").files]);
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => sendFiles([...e.dataTransfer.files]));
+function upload(file, mode) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    xhr.setRequestHeader("X-Frame-UI", "1");
+    xhr.setRequestHeader("X-Filename", encodeURIComponent(file.name));
+    xhr.setRequestHeader("X-Mode", mode);
+    const bar = $("prog").firstElementChild;
+    $("prog").style.display = "block"; bar.style.width = "0";
+    xhr.upload.onprogress = e => { if (e.lengthComputable) bar.style.width = (100 * e.loaded / e.total) + "%"; };
+    xhr.onload = () => {
+      $("prog").style.display = "none";
+      let data; try { data = JSON.parse(xhr.responseText); } catch { data = { error: `HTTP ${xhr.status}` }; }
+      xhr.status < 300 ? resolve(data) : reject(new Error(data.error));
+    };
+    xhr.onerror = () => { $("prog").style.display = "none"; reject(new Error("network error")); };
+    xhr.send(file);
+  });
+}
+async function sendFiles(files) {
+  for (const f of files) {
+    if (!f.size) { toast(`${f.name}: folders and empty files aren't supported here; use scripts/push.sh`, true); continue; }
+    const apk = f.name.toLowerCase().endsWith(".apk");
+    await act(apk ? `Install ${f.name}` : `Copy ${f.name} to ~/Downloads`, () => upload(f, apk ? "apk" : "push"));
+  }
+  $("fileInput").value = "";
+  refresh();
+}
+
+
+// ---- Steam games: install owned games, find and buy on the store ----
+const FLABEL = { 3: "Frame Verified", 2: "Playable", 1: "Unsupported", 0: "Unknown" };
+const FCLASS = { 3: "v-works", 2: "v-maybe", 1: "v-no", 0: "f-0" };
+const gm = { src: "owned", owned: null, byId: new Map(), country: null, dl: null, q: "",
+             // Rating filters per view: most store results aren't rated yet, so show them all there.
+             filters: { owned: new Set(["3", "2"]), store: new Set(["3", "2", "0", "1"]) },
+             results: [], shown: 0, store: [], storeQ: null, poll: null, seq: 0 };
+
+async function loadOwned() {
+  $("gmReload").disabled = true;
+  try {
+    const r = await api("/api/steam/owned");
+    gm.owned = r.games; gm.country = r.country || gm.country; gm.dl = r.download;
+    gm.byId = new Map(gm.owned.map(g => [g.id, g]));
+  } catch (e) {
+    if (!gm.owned) $("gmGrid").innerHTML = `<div class="sub">${esc(e.message)}</div>`;
+    log("Steam library: " + e.message, "e");
+    // Keep trying while a download was in progress; one failed poll shouldn't freeze it.
+    clearTimeout(gm.poll);
+    if (gm.dl) gm.poll = setTimeout(loadOwned, 15000);
+    return;
+  } finally { $("gmReload").disabled = false; }
+  const d = gm.dl, name = d && gm.byId.get(d.appid)?.name;
+  $("gmDl").textContent = d ? `${d.paused ? "Paused" : "Downloading"} ${name || d.appid} · ${d.percent ?? 0}%` +
+    (d.eta > 0 && !d.paused ? ` · ${dur(d.eta)} left` : "") : "";
+  // Keep polling while something downloads so the progress and Installed tags update.
+  clearTimeout(gm.poll);
+  if (d) gm.poll = setTimeout(loadOwned, document.hidden ? 30000 : 5000);
+  renderChips(); filterGames(true);
+}
+
+function renderChips() {
+  const counts = {};
+  (gm.src === "owned" ? gm.owned || [] : gm.store).forEach(g => counts[g.frame] = (counts[g.frame] || 0) + 1);
+  $("gmChips").innerHTML = [3, 2, 0, 1].map(k => `<button class="chip vchip ${FCLASS[k]}" data-f="${k}"
+    aria-pressed="${gm.filters[gm.src].has(String(k))}">${FLABEL[k]} (${(counts[k] || 0).toLocaleString()})</button>`).join("");
+}
+
+function filterGames(keepScroll) {
+  const y = window.scrollY;
+  if (gm.src === "owned") {
+    if (!gm.owned) return;
+    const terms = gm.q.toLowerCase().split(/\s+/).filter(Boolean);
+    gm.results = gm.owned.filter(g => gm.filters.owned.has(String(g.frame)) && terms.every(t => g.name.toLowerCase().includes(t)));
+    // Installed and downloading first, then recently played, then by name.
+    gm.results.sort((a, b) => (b.installed - a.installed) || (b.lastPlayed - a.lastPlayed) || a.sort.localeCompare(b.sort));
+    $("gmCount").textContent = `${gm.results.length.toLocaleString()} of ${gm.owned.length.toLocaleString()} owned`;
+  } else {
+    gm.results = gm.store.filter(g => gm.filters.store.has(String(g.frame)));
+    $("gmCount").textContent = gm.storeQ ? `${gm.results.length} of ${gm.store.length} store results` : "";
+  }
+  const n = Math.max(48, keepScroll ? gm.shown : 0);
+  $("gmGrid").innerHTML = ""; gm.shown = 0; moreGames(n);
+  if (!gm.results.length) $("gmGrid").innerHTML = `<div class="sub">${gm.src === "store" && !gm.storeQ
+    ? "Type a name and press Enter to search the Steam store." : "Nothing matches. Try turning on more ratings above."}</div>`;
+  if (keepScroll) window.scrollTo(0, y);
+}
+
+function price(p) {
+  if (!p) return "Free";
+  const f = n => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: p.currency }).format(n / 100); }
+                   catch { return `${(n / 100).toFixed(2)} ${esc(p.currency || "")}`; } };
+  return p.initial > p.final ? `<s>${f(p.initial)}</s>${f(p.final)}` : f(p.final);
+}
+
+function gameButtons(id, name, free) {
+  const g = gm.byId.get(id), d = gm.dl;
+  const storeUrl = `https://store.steampowered.com/app/${id}/`;
+  const open = `<button class="small" data-gm="store" data-id="${id}" data-name="${esc(name)}" title="Open the store page in the headset">Store on Frame</button>`;
+  if (d && d.appid === id) return `<span class="tag">${d.paused ? "Paused" : "Downloading"} ${d.percent ?? 0}%</span>`;
+  if (g && g.installed) return `<span class="tag">Installed</span>` +
+    `<button class="play small" data-launch="${id}" data-name="${esc(name)}">▶ PLAY</button>`;
+  if (g) return `<button class="action small" data-gm="install" data-id="${id}" data-name="${esc(name)}">Install on Frame</button>`;
+  return `<a href="${storeUrl}" target="_blank" rel="noopener" title="Opens in your browser">${free ? "Get" : "Buy"} on Steam ↗</a>${open}`;
+}
+
+function moreGames(count = 48) {
+  const next = gm.results.slice(gm.shown, gm.shown + count);
+  $("gmGrid").insertAdjacentHTML("beforeend", next.map(g => {
+    const own = gm.byId.get(g.id), d = gm.dl && gm.dl.appid === g.id ? gm.dl : null;
+    const sub = gm.src === "owned"
+      ? [g.minutes ? `${(g.minutes / 60).toFixed(g.minutes < 600 ? 1 : 0)} h played` : "Never played", g.vrOnly ? "VR only" : g.vr ? "VR" : "",
+         g.installed && g.size ? gb(g.size) : ""].filter(Boolean).join(" · ")
+      : `<span class="price">${own ? "In your library" : price(g.price)}</span>${g.metascore ? ` · Metacritic ${esc(g.metascore)}` : ""}`;
+    return `<div class="cat-card game-card">
+      <img class="art" loading="lazy" src="${CDN}/${g.id}/capsule_231x87.jpg" alt="" onerror="this.style.visibility='hidden'">
+      <div class="top"><div style="min-width:0"><div class="t">${esc(g.name)}</div><div class="s">${sub}</div></div>
+        <span class="vbadge ${FCLASS[g.frame] ?? FCLASS[0]}">${FLABEL[g.frame] ?? FLABEL[0]}</span></div>
+      ${d ? `<div class="bar"><i style="width:${d.percent ?? 0}%"></i></div>` : ""}
+      <div class="row">${gameButtons(g.id, g.name, gm.src === "store" && !g.price)}</div>
+    </div>`;
+  }).join(""));
+  gm.shown += next.length;
+  $("gmMore").hidden = gm.shown >= gm.results.length;
+}
+
+async function searchStore() {
+  const q = $("gmQ").value.trim();
+  if (!q) { gm.store = []; gm.storeQ = null; renderChips(); return filterGames(); }
+  if (!gm.country) await loadOwned();  // the store search needs the account's country
+  if (!gm.country) return toast("Couldn't read the Steam account's country from the Frame", true);
+  const seq = ++gm.seq;
+  $("gmGrid").innerHTML = `<div class="sub">Searching the Steam store…</div>`;
+  try {
+    const r = await api(`/api/steam/search?q=${encodeURIComponent(q)}&cc=${gm.country}`);
+    if (seq !== gm.seq) return;
+    gm.store = r.results; gm.storeQ = q;
+  } catch (e) { if (seq === gm.seq) $("gmGrid").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  renderChips(); filterGames();
+}
+
+function setGameSource(src) {
+  gm.src = src;
+  document.querySelectorAll("[data-src]").forEach(b => b.classList.toggle("on", b.dataset.src === src));
+  $("gmQ").placeholder = src === "owned" ? "Filter your games…" : "Search the Steam store, then press Enter…";
+  $("gmQ").value = src === "owned" ? gm.q : gm.storeQ || "";
+  renderChips(); filterGames();
+}
+
+$("gmSrc").onclick = e => { const b = e.target.closest("[data-src]"); if (b) setGameSource(b.dataset.src); };
+let gmTimer;
+$("gmQ").oninput = e => {
+  if (gm.src !== "owned") return;
+  clearTimeout(gmTimer); gmTimer = setTimeout(() => { gm.q = e.target.value; filterGames(); }, 150);
+};
+$("gmQ").addEventListener("keydown", e => { if (e.key === "Enter" && gm.src === "store") searchStore(); });
+$("gmReload").onclick = loadOwned;
+$("gmMore").onclick = () => moreGames();
+$("gmChips").onclick = e => {
+  const b = e.target.closest("[data-f]"); if (!b) return;
+  const f = gm.filters[gm.src];
+  f.has(b.dataset.f) ? f.delete(b.dataset.f) : f.add(b.dataset.f);
+  b.setAttribute("aria-pressed", f.has(b.dataset.f)); filterGames();
+};
+document.body.addEventListener("click", async e => {
+  const b = e.target.closest("[data-gm]"); if (!b) return;
+  const action = b.dataset.gm, appid = b.dataset.id, name = b.dataset.name;
+  const res = await act(action === "install" ? `Install ${name}` : `Open ${name} in the headset store`,
+                        () => api("/api/steam", { action, appid }), b);
+  if (action === "install" && res) loadOwned();
+});
+loadOwned();
+
+// ---- Android apps (own Lepton instance each) + catalogue ----
+const VLABEL = { works: "Works on Frame", likely: "Should work", maybe: "Might work", unlikely: "Probably crashes", no: "Won't work" };
+const cat = { apps: null, q: "", cat: "", v: new Set(["works", "likely"]), shown: 0, results: [] };
+let androidApps = [];
+
+async function loadAndroid() {
+  try {
+    androidApps = (await api("/api/android")).apps;
+  } catch (e) { $("andApps").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  $("andCount").textContent = androidApps.length ? `${androidApps.length} installed` : "";
+  $("andApps").innerHTML = androidApps.length ? androidApps.map(a => {
+    const c = cat.apps && cat.apps.find(x => x.p === a.package);
+    const icon = c && c.i ? `<img class="and-icon" src="${esc(c.i)}" alt="">` : `<div class="and-icon"></div>`;
+    return `<div class="item and-item">${icon}
+      <div class="grow"><div class="t">${esc(a.label)}</div>
+        <div class="s">${esc(a.package)} · v${esc(String(a.version || "").replace(/^v/i, ""))}</div></div>
+      ${a.running ? `<span class="tag">Running</span>` : ""}
+      <div class="row and-btns">
+        ${a.running ? `<button class="small" data-and="stop" data-pkg="${esc(a.package)}">Stop</button>`
+                    : `<button class="play small" data-and="launch" data-pkg="${esc(a.package)}">▶</button>`}
+        <button class="small" data-and="probe" data-pkg="${esc(a.package)}" title="Launch it and record whether it stays up">Test</button>
+        <button class="small" data-and="rate" data-pkg="${esc(a.package)}" data-ver="${esc(a.version)}" data-name="${esc(a.label)}" data-src="${esc(a.source || "")}" title="Report how it worked">Report</button>
+        <button class="small danger" data-and="remove" data-pkg="${esc(a.package)}" data-name="${esc(a.label)}">Remove</button>
+      </div></div>`;
+  }).join("") : `<div class="sub">No Android apps yet. Install one from the catalogue, or drop an .apk on Send to Frame.</div>`;
+  const installed = new Set(androidApps.map(a => a.package));
+  document.querySelectorAll('#catGrid [data-and="install"]').forEach(b => {
+    if (installed.has(b.dataset.pkg)) b.outerHTML = `<span class="tag">Installed</span>`;
+  });
+}
+
+async function loadCatalog() {
+  try { cat.apps = (await api("/api/android/catalog")).apps; }
+  catch (e) { $("catGrid").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  cat.apps.forEach(a => a.hay = [a.n, a.s, a.p, ...a.c].join(" ").toLowerCase());
+  const cats = [...new Set(cat.apps.flatMap(a => a.c))].sort();
+  $("catCat").innerHTML = `<option value="">All categories</option>` + cats.map(c => `<option>${esc(c)}</option>`).join("");
+  $("catCat").value = cat.cat;
+  const counts = {}; cat.apps.forEach(a => counts[a.r] = (counts[a.r] || 0) + 1);
+  $("catChips").innerHTML = Object.keys(VLABEL).map(k =>
+    `<button class="chip vchip v-${k}" data-v="${k}" aria-pressed="${cat.v.has(k)}">${VLABEL[k]} (${(counts[k] || 0).toLocaleString()})</button>`).join("");
+  filterCatalog();
+  loadAndroid();  // icons for installed apps come from the catalogue
+}
+
+function filterCatalog() {
+  const terms = cat.q.toLowerCase().split(/\s+/).filter(Boolean);
+  cat.results = cat.apps.filter(a => cat.v.has(a.r) && (!cat.cat || a.c.includes(cat.cat)) && terms.every(t => a.hay.includes(t)));
+  if (terms.length) {
+    const t = terms.join(" "), score = a => { const n = a.n.toLowerCase(); return n === t ? 0 : n.startsWith(t) ? 1 : n.includes(t) ? 2 : 3; };
+    const order = Object.keys(VLABEL);
+    cat.results.sort((x, y) => order.indexOf(x.r) - order.indexOf(y.r) || score(x) - score(y));
+  }
+  $("catCount").textContent = `${cat.results.length.toLocaleString()} of ${cat.apps.length.toLocaleString()}`;
+  $("catGrid").innerHTML = ""; cat.shown = 0; moreCatalog();
+}
+
+function moreCatalog() {
+  const installed = new Set(androidApps.map(a => a.package));
+  const next = cat.results.slice(cat.shown, cat.shown + 48);
+  $("catGrid").insertAdjacentHTML("beforeend", next.map(a => `
+    <div class="cat-card">
+      <div class="top">
+        ${a.i ? `<img class="and-icon" loading="lazy" src="${esc(a.i)}" alt="">` : `<div class="and-icon"></div>`}
+        <div style="min-width:0"><div class="t">${esc(a.n)}</div><div class="s">v${esc(String(a.v || "").replace(/^v/i, ""))} · ${gb(a.z || 0)}</div></div>
+        <span class="vbadge v-${a.r}">${VLABEL[a.r]}</span>
+      </div>
+      <div class="s">${esc(a.s)}</div>
+      <div class="why">${esc(a.why[0] || "")}${a.why.length > 1 ? `<span title="${esc(a.why.slice(1).join("\n"))}"> · more</span>` : ""}</div>
+      <div class="row">
+        ${installed.has(a.p) ? `<span class="tag">Installed</span>`
+          : a.r === "no" ? "" : `<button class="action small" data-and="install" data-pkg="${esc(a.p)}" data-name="${esc(a.n)}">Install</button>`}
+        <button class="small" data-and="rate" data-pkg="${esc(a.p)}" data-ver="${esc(a.v)}" data-name="${esc(a.n)}" data-src="F-Droid" title="Report how it worked">Report</button>
+        <a class="small" href="https://f-droid.org/packages/${esc(a.p)}/" target="_blank" rel="noopener">F-Droid</a>
+      </div>
+    </div>`).join(""));
+  cat.shown += next.length;
+  $("catMore").hidden = cat.shown >= cat.results.length;
+}
+
+$("catMore").onclick = moreCatalog;
+let catTimer;
+$("catQ").oninput = e => { clearTimeout(catTimer); catTimer = setTimeout(() => { cat.q = e.target.value; filterCatalog(); }, 150); };
+$("catCat").onchange = e => { cat.cat = e.target.value; filterCatalog(); };
+$("catChips").onclick = e => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  cat.v.has(b.dataset.v) ? cat.v.delete(b.dataset.v) : cat.v.add(b.dataset.v);
+  b.setAttribute("aria-pressed", cat.v.has(b.dataset.v)); filterCatalog();
+};
+document.body.addEventListener("click", async e => {
+  const b = e.target.closest("[data-and]"); if (!b) return;
+  const pkg = b.dataset.pkg, action = b.dataset.and;
+  if (action === "install") {
+    toast(`Installing ${b.dataset.name}. The first time takes a minute…`);
+    await act(`Install ${b.dataset.name}`, () => api("/api/android", { action, package: pkg }), b);
+  } else if (action === "remove") {
+    if (!confirm(`Remove ${b.dataset.name} and its data from the Frame?`)) return;
+    await act(`Remove ${b.dataset.name}`, () => api("/api/android", { action, package: pkg }), b);
+  } else if (action === "rate") {
+    openReport({ package: pkg, version: b.dataset.ver, label: b.dataset.name, source: b.dataset.src });
+    return;
+  } else {
+    if (action === "probe") toast(`Testing ${pkg}: launching it and watching for 20 s…`);
+    await act(`${action[0].toUpperCase() + action.slice(1)} ${pkg}`, () => api("/api/android", { action, package: pkg }), b);
+    if (action === "probe") { loadCatalog(); loadReports(); }
+  }
+  loadAndroid();
+  if (cat.apps) { const y = window.scrollY; filterCatalog(); window.scrollTo(0, y); }
+});
+loadCatalog();
+
+// ---- Android display (wm size / wm density / font_scale per Lepton instance) ----
+const disp = { list: [], port: null };
+const DPI = [120, 640];
+const dims = s => { const m = /^(\d+)x(\d+)$/.exec(s || ""); return m ? [+m[1], +m[2]] : null; };
+const clampDpi = d => Math.max(DPI[0], Math.min(DPI[1], Math.round(d)));
+function dispLabel(i) {
+  const apps = (i.packages || []).map(p => i.labels && i.labels[p] ? `${i.labels[p]} (${p})` : p);
+  const dev = i.container === "lepton-dev";
+  const what = apps.length ? apps.join(", ") : "no apps installed";
+  return `${dev ? "Lepton Development: " : ""}${what} · port ${i.port}`;
+}
+function dispCur() { return disp.list.find(i => i.port === disp.port); }
+// Derived values: the density that looks "default" at the current resolution,
+// and how far the user has moved from it.
+function dispCalc(i) {
+  const phys = dims(i.physicalSize), size = dims(i.overrideSize) || phys;
+  const physD = i.physicalDensity, curD = i.overrideDensity || physD;
+  const factor = phys && size ? size[0] / phys[0] : 1;
+  const baseD = physD ? physD * factor : null;
+  return { phys, size, physD, curD, factor, baseD, userScale: baseD ? curD / baseD : 1 };
+}
+async function loadDisplays() {
+  $("dispReload").disabled = true;
+  try {
+    disp.list = (await api("/api/android/displays")).instances;
+  } catch (e) {
+    disp.list = [];
+    log("Android display: " + e.message, "e");
+  } finally { $("dispReload").disabled = false; }
+  if (!disp.list.some(i => i.port === disp.port)) disp.port = disp.list.length ? disp.list[0].port : null;
+  const sel = $("dispSel");
+  sel.innerHTML = disp.list.length ? disp.list.map(i => `<option value="${i.port}">${esc(dispLabel(i))}</option>`).join("")
+                                   : `<option value="">No Lepton instance is running</option>`;
+  if (disp.port) sel.value = String(disp.port);
+  renderDisplay();
+}
+function renderDisplay() {
+  const i = dispCur();
+  const btns = document.querySelectorAll("#display .seg button, #dispDpiSet, #dispReset, #dispDpi");
+  btns.forEach(b => b.disabled = !i || !!i.error);
+  document.querySelectorAll("#display .seg button").forEach(b => b.classList.remove("on"));
+  const set = (id, v, d) => { $(id).textContent = v; $(id + "D").textContent = d || " "; };
+  if (!i || i.error) {
+    set("dispSize", "—", i ? i.error : ""); set("dispDens", "—"); set("dispFont", "—");
+    return;
+  }
+  const c = dispCalc(i);
+  set("dispSize", c.size ? `${c.size[0]}×${c.size[1]}` : "—", i.overrideSize ? `panel is ${i.physicalSize}` : "native");
+  set("dispDens", `${c.curD ?? "—"} dpi`, i.overrideDensity ? `default ${i.physicalDensity}` : "default");
+  const fs = i.fontScale ?? 1;
+  set("dispFont", `${fs === 1 ? "1.0" : fs}×`, i.fontScale == null ? "default" : "custom");
+  $("dispDpi").value = c.curD ?? "";
+  const res = c.factor === 1 ? "native" : c.size && c.size[0] === 2560 && c.size[1] === 1440 ? "sharp" : "";
+  document.querySelectorAll("[data-res]").forEach(b => b.classList.toggle("on", b.dataset.res === res));
+  document.querySelectorAll("[data-scale]").forEach(b => b.classList.toggle("on", c.baseD && clampDpi(c.baseD * +b.dataset.scale) === c.curD));
+  document.querySelectorAll("[data-font]").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.font - fs) < 0.001));
+}
+async function applyDisplay(label, change, btn) {
+  const i = dispCur(); if (!i) return;
+  const res = await act(`${label} (port ${i.port})`, () => api("/api/android/display", { port: i.port, ...change }), btn);
+  if (res && res.display) { Object.assign(i, res.display); renderDisplay(); }
+}
+$("dispReload").onclick = loadDisplays;
+$("dispSel").onchange = e => { disp.port = +e.target.value || null; renderDisplay(); };
+$("dispRes").onclick = e => {
+  const b = e.target.closest("[data-res]"), i = dispCur(); if (!b || !i) return;
+  const c = dispCalc(i); if (!c.phys || !c.physD) return toast("Unknown panel size", true);
+  // Keep the user's relative UI scale while changing how many pixels there are.
+  if (b.dataset.res === "native") {
+    const d = clampDpi(c.physD * c.userScale);
+    applyDisplay("Native resolution", { size: "reset", density: d === c.physD ? "reset" : d }, b);
+  } else {
+    applyDisplay("Sharp resolution", { size: "2560x1440", density: clampDpi(c.physD * (2560 / c.phys[0]) * c.userScale) }, b);
+  }
+};
+$("dispScale").onclick = e => {
+  const b = e.target.closest("[data-scale]"), i = dispCur(); if (!b || !i) return;
+  const c = dispCalc(i); if (!c.baseD) return toast("Unknown default density", true);
+  const d = clampDpi(c.baseD * +b.dataset.scale);
+  applyDisplay(`UI scale ${b.textContent}`, { density: c.factor === 1 && d === c.physD ? "reset" : d }, b);
+};
+$("dispDpiSet").onclick = () => {
+  const d = Number($("dispDpi").value);
+  if (!Number.isInteger(d) || d < DPI[0] || d > DPI[1]) return toast(`Density must be a whole number ${DPI[0]}–${DPI[1]}`, true);
+  applyDisplay(`Density ${d} dpi`, { density: d }, $("dispDpiSet"));
+};
+$("dispDpi").addEventListener("keydown", e => { if (e.key === "Enter") $("dispDpiSet").click(); });
+$("dispText").onclick = e => {
+  const b = e.target.closest("[data-font]"); if (!b) return;
+  const f = +b.dataset.font;
+  applyDisplay(`Text size ${f}×`, { fontScale: f === 1 ? "reset" : f }, b);
+};
+$("dispReset").onclick = () => applyDisplay("Reset Android display", { size: "reset", density: "reset", fontScale: "reset" }, $("dispReset"));
+loadDisplays();
+
+
+// ---- compatibility reports: any APK, did it work ----
+const RLABEL = { works: "Works", issues: "Problems", broken: "Doesn't work", runs: "Runs (test)",
+                 crashes: "Crashed (test)", install_failed: "Won't install", instance_failed: "Didn't start (test)" };
+const RCLASS = { works: "works", runs: "works", issues: "maybe" };
+async function loadReports() {
+  let reps;
+  try { reps = (await api("/api/android/reports")).reports; }
+  catch (e) { $("repList").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  $("repCount").textContent = reps.length ? `${reps.length} newest` : "";
+  $("repList").innerHTML = reps.length ? reps.slice(0, 40).map(r => {
+    const k = r.rating || r.result;
+    return `<div class="item rep-item"><div class="grow">
+      <div class="t">${esc(r.name)} <span class="sub">v${esc(String(r.version || "?").replace(/^v/i, ""))}</span></div>
+      <div class="s">${esc(r.package)} · ${esc((r.date || "").slice(0, 10))} · ${esc(r.via === "user" ? "you" : r.via || "")}${r.runtime ? " · " + esc(r.runtime) : ""}${r.source ? " · " + esc(r.source) : ""}</div>
+      ${r.notes ? `<div class="s">${esc(r.notes)}</div>` : ""}</div>
+      <span class="vbadge v-${RCLASS[k] || "no"}">${esc(RLABEL[k] || k || "")}</span></div>`;
+  }).join("") : `<div class="sub">No reports yet.</div>`;
+}
+function openReport(p = {}) {
+  const f = $("repForm");
+  f.reset();
+  $("repPkg").value = p.package || ""; $("repVer").value = p.version || "";
+  $("repLabel").value = p.label || ""; $("repSrc").value = p.source || "";
+  $("repMsg").textContent = ""; $("repFileNote").textContent = "";
+  const known = new Map();
+  androidApps.forEach(a => known.set(a.package, a.label));
+  (cat.apps || []).slice(0, 4000).forEach(a => known.has(a.p) || known.set(a.p, a.n));
+  $("repPkgs").innerHTML = [...known].map(([p, n]) => `<option value="${esc(p)}">${esc(n)}</option>`).join("");
+  $("repDlg").showModal();
+  (p.package ? document.querySelector('input[name="repRating"]') : $("repPkg")).focus();
+}
+$("repNew").onclick = () => openReport();
+$("repCancel").onclick = () => $("repDlg").close();
+$("repPkg").onchange = () => {
+  const pkg = $("repPkg").value.trim();
+  const a = androidApps.find(x => x.package === pkg), c = cat.apps && cat.apps.find(x => x.p === pkg);
+  if (!$("repLabel").value) $("repLabel").value = (a && a.label) || (c && c.n) || "";
+  if (!$("repVer").value) $("repVer").value = (a && a.version) || (c && c.v) || "";
+};
+$("repPick").onclick = () => $("repFile").click();
+$("repFile").onchange = async () => {
+  const file = $("repFile").files[0]; if (!file) return;
+  $("repFileNote").textContent = "Reading…";
+  try {
+    const { apk } = await upload(file, "apkinfo");
+    $("repPkg").value = apk.package; $("repVer").value = apk.version; $("repLabel").value = apk.label;
+    if (!$("repSrc").value) $("repSrc").value = file.name;
+    $("repFileNote").textContent = apk.blocker ? `Note: ${apk.blocker}` : `${apk.package} ${apk.version}`;
+  } catch (e) { $("repFileNote").textContent = e.message; }
+  $("repFile").value = "";
+};
+$("repForm").onsubmit = async e => {
+  e.preventDefault();
+  const rating = document.querySelector('input[name="repRating"]:checked');
+  if (!$("repPkg").checkValidity()) return ($("repMsg").textContent = "Enter the package name, e.g. org.example.app");
+  if (!rating) return ($("repMsg").textContent = "Choose whether it worked");
+  const body = { action: "report", package: $("repPkg").value.trim(), version: $("repVer").value.trim(),
+    label: $("repLabel").value.trim(), source: $("repSrc").value.trim(), notes: $("repNotes").value.trim(),
+    rating: rating.value, runtime: document.querySelector('input[name="repRuntime"]:checked').value };
+  $("repSave").disabled = true;
+  try {
+    const res = await api("/api/android", body);
+    $("repDlg").close(); toast(res.message); log(res.message, "ok");
+    loadReports(); loadCatalog();
+  } catch (err) { $("repMsg").textContent = err.message; }
+  finally { $("repSave").disabled = false; }
+};
+loadReports();
+
+// ---- nav highlight follows scroll ----
+const spy = new IntersectionObserver(entries => {
+  const top = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+  if (top) document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + top.target.id));
+}, { rootMargin: "-80px 0px -55% 0px" });
+["view", "library", "getgames", "android", "transfer", "apps", "display", "power"].forEach(id => spy.observe($(id)));
+
+setView("headset");
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 30000);
+</script>
+</body>
+</html>
