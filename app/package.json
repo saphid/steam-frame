@@ -75,7 +75,8 @@
       "extendInfo": {
         "NSAppleEventsUsageDescription": "Frame Control opens Terminal for SSH sessions and for power actions that need the Developer Mode password.",
         "NSLocalNetworkUsageDescription": "Frame Control connects to your Steam Frame over SSH on the local network."
-      }
+      },
+      "artifactName": "Frame-Control-mac-${arch}.${ext}"
     },
     "dmg": {
       "title": "Frame Control ${version}"
@@ -94,7 +95,7 @@
       "icon": "build/icon.png",
       "executableName": "frame-control",
       "synopsis": "Manage a Valve Steam Frame over SSH",
-      "artifactName": "Frame-Control-${version}-${arch}.${ext}",
+      "artifactName": "Frame-Control-linux-${arch}.${ext}",
       "desktop": {
         "entry": {
           "StartupWMClass": "frame-control"
@@ -113,7 +114,7 @@
         "zip"
       ],
       "icon": "build/icon.png",
-      "artifactName": "Frame-Control-${version}-win-${arch}.${ext}",
+      "artifactName": "Frame-Control-win-${arch}.${ext}",
       "extraResources": [
         {
           "from": "build/python-win",
@@ -128,7 +129,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "Frame-Control-Setup-${version}.${ext}"
+      "artifactName": "Frame-Control-Setup-${arch}.${ext}"
     }
   },
   "homepage": "https://github.com/saphid/steam-frame",
