@@ -76,6 +76,8 @@ Details: [docs/ssh.md](docs/ssh.md), [docs/streaming.md](docs/streaming.md),
 | `scripts/connect.sh` | Mac | Discover, set up key and `~/.ssh/config`, copy key, optional `--harden` (**verified**; `--harden` untested) |
 | `scripts/install-apps.sh` | Mac → Frame | Install Flatpaks (Remmina, Moonlight, …) on the Frame over SSH as `--user` (**verified** with Remmina) |
 | `scripts/paste-to-frame.sh` | Mac → Frame | Send the Mac clipboard (or stdin) to the Frame clipboard (**verified**) |
+| `scripts/install-apk.sh` | Mac → Frame | Install APKs into Lepton with ADB tunnelled over SSH; starts Lepton Development if needed (**verified**; see [docs/apks.md](docs/apks.md) for app compatibility) |
+| `scripts/run-on-frame.sh` | Mac → Frame | Start an app on the headset desktop, e.g. `mac-screen` opens Remmina straight into the Mac (**verified**) |
 | `scripts/push.sh` | Mac → Frame | `rsync` files to `~/Downloads` (or a given path) on the Frame (**verified**) |
 | `scripts/serve-bootstrap.sh` | Mac | Fallback: serve `bootstrap-on-frame.sh` with your public key embedded |
 | `scripts/bootstrap-on-frame.sh` | Frame | Fallback: install the key and enable `sshd` |
