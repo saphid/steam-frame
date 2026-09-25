@@ -2,9 +2,12 @@ name: release
 
 # Pushing a v* tag builds Frame Control for macOS, Windows and Linux and attaches
 # the installers to that tag's GitHub release (created as a draft if missing).
+# Pull requests that touch the app build the same installers as artifacts.
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths: ["app/**", "ui/**", "scripts/**", "frame/**", "apk-catalog/**", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
