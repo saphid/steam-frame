@@ -109,7 +109,7 @@ function ping(target) {
 
 async function startServer() {
   const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1",
-                PYTHONIOENCODING: "utf-8", FRAME_CONTROL_APP: "1" };
+                PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", FRAME_CONTROL_APP: "1" };  // UTF-8 even on Windows
   python = await findPython(env);
   if (!python) throw new Error(`Frame Control needs Python 3.8 or later. ${PYTHON_HELP}`);
   if (!await hasSsh(env)) throw new Error(`Frame Control needs the ssh command. ${SSH_HELP}`);
