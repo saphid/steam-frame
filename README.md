@@ -5,8 +5,7 @@
 # Frame Control
 
 **Manage your Valve Steam Frame from your computer.**<br>
-See what the headset sees, install games and Android apps, move files and text
-across, and check battery and status, all over SSH.
+See what the headset sees, install games and Android apps, move files and text across, and check battery and status, all over SSH.
 
 [![Latest release](https://img.shields.io/github/v/release/saphid/steam-frame?label=release&color=1a9fff)](https://github.com/saphid/steam-frame/releases/latest)
 [![Platforms](https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-2a475e?label=runs%20on)](#install)
@@ -32,15 +31,13 @@ across, and check battery and status, all over SSH.
 <td width="50%" valign="top">
 
 **👓 Headset view**<br>
-Live video of what the lenses show (about 30 fps), or a still of both eyes.
-Zoom, pan, full screen, save as PNG.
+Live video of what the lenses show (about 30 fps), or a still of both eyes. Zoom, pan, full screen, save as PNG.
 
 </td>
 <td width="50%" valign="top">
 
 **🔋 Battery and status**<br>
-Charge, charging watts and time left, storage, memory, temperature, Wi-Fi, and
-what's running.
+Charge, charging watts and time left, storage, memory, temperature, Wi-Fi, and what's running.
 
 </td>
 </tr>
@@ -48,15 +45,13 @@ what's running.
 <td valign="top">
 
 **🎮 Steam games**<br>
-Everything you own with its Steam Frame rating. Install onto the headset with
-live progress, and search the store.
+Everything you own with its Steam Frame rating. Install onto the headset with live progress, and search the store.
 
 </td>
 <td valign="top">
 
 **🤖 Android apps**<br>
-About 4,500 F-Droid apps rated for the Frame. One click installs each as its
-own app in your Steam library.
+About 4,500 F-Droid apps rated for the Frame. One click installs each as its own app in your Steam library.
 
 </td>
 </tr>
@@ -64,8 +59,7 @@ own app in your Steam library.
 <td valign="top">
 
 **📁 Files and clipboard**<br>
-Drag files onto the window to send them. Send text or your clipboard straight
-to the headset's desktop.
+Drag files onto the window to send them. Send text or your clipboard straight to the headset's desktop.
 
 </td>
 <td valign="top">
@@ -79,8 +73,7 @@ Browse the shots you take in the headset and save them to your Pictures folder.
 <td valign="top">
 
 **🧩 Flatpaks and display**<br>
-Install desktop apps like Moonlight or VLC, and set each Android app's
-resolution and text size.
+Install desktop apps like Moonlight or VLC, and set each Android app's resolution and text size.
 
 </td>
 <td valign="top">
