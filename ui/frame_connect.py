@@ -21,6 +21,10 @@ FRAME_ALIAS = os.environ.get("FRAME_ALIAS", "frame")
 SSH_DIR = Path.home() / ".ssh"
 KEY = SSH_DIR / "id_ed25519_frame"
 CONFIG = SSH_DIR / "config"
+# Both go into ~/.ssh/config, so nothing that could add a line or a directive.
+for _name, _value in (("FRAME_ALIAS", FRAME_ALIAS), ("FRAME_USER", FRAME_USER)):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", _value):
+        sys.exit(f"{_name} must be a plain name, not {_value!r}")
 BEGIN = f"# >>> steam-frame ({FRAME_ALIAS}) >>>"
 END = f"# <<< steam-frame ({FRAME_ALIAS}) <<<"
 
@@ -125,7 +129,7 @@ def main(argv):
     say("==> Looking for the Steam Frame")
     found = pick_host(argv[0] if argv else None)
     while not found:
-        say("Could not reach the Frame on port 22.")
+        say("Could not reach the Frame over SSH.")
         say("Check: Developer Mode on and a user password set; same network; no client isolation.")
         try:
             typed = input("Type the Frame's IP address (Quick Settings shows it), or press Enter to quit: ").strip()

@@ -146,19 +146,29 @@ def open_terminal(argv, title="Frame Control"):
         # `start` gives the command its own console window; cmd /k keeps it open.
         # One hand-built command line: quoting it twice through list2cmdline would
         # produce backslash-escaped quotes, which cmd doesn't understand.
-        # Every argument is quoted, so cmd treats & | < > ^ in them literally.
-        inner = " ".join('"%s"' % a.replace('"', '\\"') for a in argv)
+        # Every argument is quoted, so cmd treats & | < > ^ in them literally. cmd has
+        # no escape for a quote inside quotes (and expands %VAR% regardless), so refuse those.
+        if any(c in a for a in argv for c in '"%\r\n'):
+            raise HostError("Can't pass quotes or % to a Windows terminal")
+        inner = " ".join(f'"{a}"' for a in argv)
         subprocess.Popen(f'cmd.exe /c start "{title}" cmd.exe /k "{inner}"', **DETACHED)
         return "a terminal window"
     script = f'{shlex.join(argv)}; echo; read -r -p "Press Enter to close. " _'
+    # flags=None: the terminal takes the whole command as one string after -e.
     for name, flags in (("x-terminal-emulator", ["-e"]), ("gnome-terminal", ["--"]), ("ptyxis", ["--"]),
                         ("kgx", ["--"]), ("konsole", ["-e"]), ("xfce4-terminal", ["-x"]),
-                        ("tilix", ["-e"]), ("lxterminal", ["-e"]), ("kitty", []), ("alacritty", ["-e"]),
+                        ("tilix", None), ("lxterminal", None), ("kitty", []), ("alacritty", ["-e"]),
                         ("wezterm", ["start", "--"]), ("foot", []), ("xterm", ["-e"])):
         exe = which(name)
-        if exe:
+        if not exe:
+            continue
+        if flags is None:
+            _spawn([exe, "-e", "bash -c " + shlex.quote(script)])
+        elif name == "x-terminal-emulator" and "lxterminal" in os.path.realpath(exe):
+            _spawn([exe, "-e", "bash -c " + shlex.quote(script)])  # Debian alternative -> lxterminal
+        else:
             _spawn([exe, *flags, "bash", "-c", script])
-            return name
+        return name
     raise HostError("No terminal program found (tried gnome-terminal, konsole, xterm and others)")
 
 
