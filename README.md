@@ -4,9 +4,10 @@ This repo holds notes and Mac-side helpers for controlling a Valve Steam Frame
 (standalone VR headset: SteamOS 3, Arch-based, arm64, Snapdragon 8 Gen 3) from
 this Mac, with as little typing on the headset's virtual keyboard as possible.
 
-Status: research written 2026-09-25. **None of the scripts have been run
-against a real Frame yet.** Treat them as untested until the checklist below has
-been done once.
+Status: research written 2026-09-25, then checked against a real Frame the same
+day (SteamOS 0.3.0, variant `vr`, build 20260922). `connect.sh`, `push.sh`,
+`paste-to-frame.sh` and `install-apps.sh` work; the rest are still untested. See
+[docs/open-questions.md](docs/open-questions.md#verified-on-device-2026-09-25).
 
 ## Minimum typing on the headset
 
@@ -61,21 +62,21 @@ enables `sshd`. See [docs/ssh.md](docs/ssh.md#fallback-bootstrap-one-liner).
 | Shell on the Frame | `ssh frame` (user `steamos`) | Confirmed (Valve docs) |
 | **See/control the Frame from the Mac** | **Steam Link for macOS → connect to `frame`** (Valve names this). Alternatives: RDP to `xrdp` with Microsoft *Windows App* for the Linux desktop, or `adb`/`scrcpy` for the Android (Lepton) layer only | Steam Link and xrdp confirmed on Frame; the Mac RDP client is inferred |
 | **Show the Mac's desktop inside the Frame** | **macOS Screen Sharing (built-in VNC) → Remmina (Flatpak, aarch64) on the Frame's Linux desktop**, installed over SSH | Inferred: each piece is documented, but the combination hasn't been tested on a Frame |
-| File transfer | `scp` / `rsync` over the `frame` alias (`scripts/push.sh`) | Inferred from confirmed SSH |
-| Paste Mac clipboard into the headset | `scripts/paste-to-frame.sh` (`pbpaste` → `ssh` → `wl-copy`), or the clipboard sync in an RDP session | Inferred / untested |
+| File transfer | `scp` / `rsync` over the `frame` alias (`scripts/push.sh`) | **Verified** (rsync is on the image) |
+| Paste Mac clipboard into the headset | `scripts/paste-to-frame.sh` (`pbpaste` → `ssh` → Klipper over D-Bus), or the clipboard sync in an RDP session | **Verified** (script); RDP untested |
 
 Details: [docs/ssh.md](docs/ssh.md), [docs/streaming.md](docs/streaming.md),
 [docs/file-transfer.md](docs/file-transfer.md),
 [docs/open-questions.md](docs/open-questions.md).
 
-## Scripts (all untested against hardware)
+## Scripts
 
 | Script | Runs on | Purpose |
 |---|---|---|
-| `scripts/connect.sh` | Mac | Discover, set up key and `~/.ssh/config`, copy key, optional `--harden` |
-| `scripts/install-apps.sh` | Mac → Frame | Install Flatpaks (Remmina, Moonlight, …) on the Frame over SSH as `--user` |
-| `scripts/paste-to-frame.sh` | Mac → Frame | Send the Mac clipboard (or stdin) to the Frame clipboard |
-| `scripts/push.sh` | Mac → Frame | `rsync` files to `~/Downloads` (or a given path) on the Frame |
+| `scripts/connect.sh` | Mac | Discover, set up key and `~/.ssh/config`, copy key, optional `--harden` (**verified**; `--harden` untested) |
+| `scripts/install-apps.sh` | Mac → Frame | Install Flatpaks (Remmina, Moonlight, …) on the Frame over SSH as `--user` (**verified** with Remmina) |
+| `scripts/paste-to-frame.sh` | Mac → Frame | Send the Mac clipboard (or stdin) to the Frame clipboard (**verified**) |
+| `scripts/push.sh` | Mac → Frame | `rsync` files to `~/Downloads` (or a given path) on the Frame (**verified**) |
 | `scripts/serve-bootstrap.sh` | Mac | Fallback: serve `bootstrap-on-frame.sh` with your public key embedded |
 | `scripts/bootstrap-on-frame.sh` | Frame | Fallback: install the key and enable `sshd` |
 

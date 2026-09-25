@@ -2,7 +2,7 @@
 # Mac-side: find the Steam Frame, create a key, add a `Host frame` alias to
 # ~/.ssh/config, copy the key, and optionally disable SSH password logins.
 #
-# UNTESTED against real hardware. Idempotent: safe to re-run.
+# Verified on a Frame 2026-09-25 (except --harden). Idempotent: safe to re-run.
 #
 # Usage:
 #   scripts/connect.sh [HOST_OR_IP]          # set up key + alias

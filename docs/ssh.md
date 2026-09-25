@@ -31,10 +31,8 @@ Valve's examples use a bare `frame`. That works on Windows through
 LLMNR/NetBIOS. **On macOS, a bare single-label name usually doesn't resolve**
 unless your router's DNS registers DHCP client names.
 
-- A secondary source says `frame.local`, a DNS alias, or the IP all work
-  (search-result summary only, no primary source found). SteamOS on Deck
-  normally answers `steamdeck.local` over mDNS (Avahi). **Inferred**: the Frame
-  probably answers `frame.local`.
+- **Verified on device (2026-09-25):** `avahi-daemon` is running on the Frame
+  and `frame.local` resolves from the Mac over mDNS.
 - `scripts/connect.sh` tries `frame.local`, then `frame`. If neither works, it tells you to re-run it with the IP.
   Once you have a working address, the `Host frame` alias means you just type
   `ssh frame`.

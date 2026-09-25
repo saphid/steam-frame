@@ -6,6 +6,38 @@ pages. Searches of Reddit and the Steam forums turned up **almost no
 end-user reports** about SSH, desktop streaming, or macOS. Treat that as
 "not documented yet", not "doesn't work".
 
+## Verified on device (2026-09-25)
+
+Checked over SSH from the Mac, read-only, on SteamOS 0.3.0 (`VARIANT_ID=vr`,
+build 20260922.6101926, kernel 6.18, aarch64):
+
+- **1–2.** Developer Mode + Set User Password gave working SSH with no terminal
+  steps. `sshd` is enabled and active. The user is `steamos` (in `wheel`) and
+  the hostname is `frame`.
+- **3.** `frame.local` resolves from the Mac; `avahi-daemon` is active.
+- **5.** `/etc/ssh/sshd_config` has `Include /etc/ssh/sshd_config.d/*.conf`.
+  The existing drop-ins are `20-systemd-userdb.conf` and `99-archlinux.conf`, so
+  `01-frame-keys-only.conf` would sort first as intended. (`--harden` itself
+  hasn't been run.)
+- **8.** The in-headset desktop is `kwin_wayland` + `plasmashell` nested
+  inside gamescope (1280×800), with `XDG_RUNTIME_DIR=/run/user/1000/nested_plasma`,
+  `WAYLAND_DISPLAY=wayland-0`, `DISPLAY=:2` and a private D-Bus bus. SteamVR
+  (`vrserver`, `vrcompositor`) and `xrdp` are running.
+- **9.** `rsync`, `flatpak`, `python3`, `git`, `qdbus6` and `xrdp` are present.
+  `wl-copy`, `xclip`, `xsel`, `kdeconnect-cli`, `tailscale`, `krfb` and `wayvnc`
+  are **not**. `paste-to-frame.sh` now uses Klipper over D-Bus and round-trips
+  text correctly.
+- Flathub is already configured as a **system** remote; Chromium is the only
+  installed Flatpak. `/` is 10 GB (42% used); `/home` is 929 GB.
+- `push.sh` copied a test file with rsync.
+- **10.** `install-apps.sh remmina --vnc-host <mac>.local` installed Remmina as
+  a `--user` Flatpak over SSH and wrote the profile. The desktop's
+  `XDG_DATA_DIRS` includes the user Flatpak exports, so it shows up in the menu.
+  The Frame can reach the Mac's Screen Sharing port (5900). The Remmina
+  connection itself hasn't been tried in the headset yet (part of 11).
+
+Still open: 4, 6, 7, 11 (in-headset connect), 12–16.
+
 ## Check on the headset (in order)
 
 1. **Is Developer Mode available on a retail unit?** Valve's pages are aimed at
@@ -51,13 +83,11 @@ end-user reports** about SSH, desktop streaming, or macOS. Treat that as
 
 ## Unconfirmed claims made in these docs
 
-- `frame.local` works. This comes from one secondary search summary, with no
-  primary source found.
 - `/home` and `/etc` persist across Frame OS updates. This is inferred from
   Steam Deck behaviour.
 - The whole Mac → Frame desktop path (VNC → Remmina). Each part is documented
   separately, but the combination is untested.
 - Steam Remote Play with a Mac as host is broken. That's based on community
   reports, not tested with the Frame.
-- None of the `scripts/` have run against real hardware. They were only
-  syntax-checked on the Mac (see the commit message).
+- `connect.sh --harden`, `serve-bootstrap.sh` and
+  `bootstrap-on-frame.sh` haven't run against real hardware.

@@ -2,7 +2,9 @@
 # Mac-side: install Flatpaks on the Steam Frame over SSH (per-user, so they
 # survive SteamOS updates and need no sudo / steamos-readonly changes).
 #
-# UNTESTED against real hardware. Idempotent.
+# Verified on a Frame 2026-09-25 (remmina + --vnc-host). Idempotent.
+# The "exports/share is not in the search path" warning only applies to the
+# SSH shell; the headset desktop's XDG_DATA_DIRS already includes it.
 #
 # Usage:
 #   scripts/install-apps.sh remmina [--vnc-host my-mac.local]

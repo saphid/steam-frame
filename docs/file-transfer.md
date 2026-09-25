@@ -26,13 +26,13 @@ virtual keyboard's paste key or a right-click → Paste.
 echo "https://example.com" | ./scripts/paste-to-frame.sh -
 ```
 
-How it works (untested). Over SSH, the script finds the logged-in Plasma
-session's `XDG_RUNTIME_DIR` and `wayland-*` socket, then runs `wl-copy`. If
-there's no Wayland socket or no `wl-copy`, it tries `xclip` with `DISPLAY=:0`.
-It assumes the in-headset desktop is a normal Plasma session owned by
-`steamos`. That isn't known yet: the headset desktop may be a KWin session
-nested inside SteamVR. If both methods fail, the script prints what it found so
-the approach can be adjusted.
+How it works (verified 2026-09-25). The headset's desktop is a Plasma Wayland
+session nested inside gamescope, with its own runtime dir
+(`/run/user/1000/nested_plasma`) and its own D-Bus bus. `wl-copy` and `xclip`
+aren't installed. The script reads the bus address from `plasmashell`'s
+environment and calls Klipper's `setClipboardContents` with `qdbus6`. The
+desktop has to be running in the headset. It's text only, and pastes over about
+100 KB hit the argument limit, so send big things with `push.sh`.
 
 A simpler fallback: `ssh frame 'cat > ~/clip.txt'` < file, then open it in the
 headset.

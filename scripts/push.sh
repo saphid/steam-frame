@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # Mac-side: copy a file or folder to the Steam Frame.
 #
-# UNTESTED against real hardware.
+# Verified on a Frame 2026-09-25.
 #
 # Usage: scripts/push.sh SOURCE [REMOTE_DEST]   (default dest: ~/Downloads/)
 set -euo pipefail

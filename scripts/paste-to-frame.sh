@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 # Mac-side: put text on the Steam Frame desktop clipboard.
 #
-# UNTESTED against real hardware. Assumes the in-headset desktop is a Plasma
-# session owned by the SSH user; prints diagnostics if that assumption fails.
+# Needs the headset's desktop (Plasma) to be running. Text only; very large
+# pastes (over ~100 KB) exceed the argument limit, so use push.sh for those.
 #
 # Usage:
 #   scripts/paste-to-frame.sh        # sends the Mac clipboard (pbpaste)
@@ -11,28 +11,27 @@ set -euo pipefail
 
 FRAME_ALIAS=${FRAME_ALIAS:-frame}
 
-# Runs on the Frame. Clipboard text arrives on stdin. setsid keeps the
-# clipboard-serving process alive after the SSH session closes.
+# Runs on the Frame. Clipboard text arrives on stdin.
+# Verified 2026-09-25 (SteamOS 0.3.0 vr, build 20260922): the headset desktop is
+# a nested Plasma Wayland session inside gamescope with its own D-Bus bus, and
+# wl-copy/xclip are not installed. Klipper (org.kde.klipper, served by
+# plasmashell) is reachable with qdbus6, so we borrow plasmashell's bus address.
 remote=$(cat <<'EOF'
 set -u
-tmp=$(mktemp)
-cat > "$tmp"
-rt=/run/user/$(id -u)
-sock=$(ls "$rt" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -n 1)
-if [ -n "$sock" ] && command -v wl-copy >/dev/null 2>&1 \
-   && XDG_RUNTIME_DIR=$rt WAYLAND_DISPLAY=$sock setsid wl-copy < "$tmp" >/dev/null 2>&1; then
-  echo "copied via wl-copy ($sock)"
-elif command -v xclip >/dev/null 2>&1 \
-   && DISPLAY=:0 setsid xclip -selection clipboard -i < "$tmp" >/dev/null 2>&1; then
-  echo "copied via xclip (DISPLAY=:0)"
-else
-  echo "clipboard copy failed; diagnostics:" >&2
-  echo "  runtime dir: $(ls "$rt" 2>&1 | tr '\n' ' ')" >&2
-  echo "  wl-copy: $(command -v wl-copy || echo missing)  xclip: $(command -v xclip || echo missing)" >&2
-  loginctl list-sessions --no-legend 2>&1 | sed 's/^/  session: /' >&2
-  rm -f "$tmp"; exit 2
+text=$(cat; printf x); text=${text%x}
+pid=$(pgrep -u "$(id -u)" -x plasmashell | head -n 1)
+if [ -z "$pid" ]; then
+  echo "plasmashell is not running: open the desktop in the headset first." >&2
+  exit 2
 fi
-rm -f "$tmp"
+bus=$(tr '\0' '\n' < "/proc/$pid/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+if DBUS_SESSION_BUS_ADDRESS=$bus qdbus6 org.kde.klipper /klipper \
+     org.kde.klipper.klipper.setClipboardContents "$text" >/dev/null; then
+  echo "copied via Klipper (${#text} chars)"
+else
+  echo "Klipper call failed (bus: ${bus:-none})" >&2
+  exit 2
+fi
 EOF
 )
 b64=$(print -rn -- "$remote" | base64)
