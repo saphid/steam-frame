@@ -108,7 +108,8 @@ _install_lock = threading.Lock()  # installs are rare; one at a time avoids ever
 def _copy(src, dest, executable=False, timeout=600):
     """Copy a local file to the Frame: rsync where installed (not on Windows), else scp."""
     name = os.path.basename(src)
-    if shutil.which('rsync'):
+    rsync = None if frame_host.WINDOWS else shutil.which('rsync')  # see server.push_file
+    if rsync:
         cmd = ['rsync', '-a', *(['--chmod=u+x'] if executable else []),
                '-e', shlex.join(['ssh', *SSH_OPTS]), src, f'{FRAME}:{dest}']
     else:
@@ -119,7 +120,7 @@ def _copy(src, dest, executable=False, timeout=600):
         raise FrameError(f'copying {name} to the Frame timed out')
     except subprocess.CalledProcessError as e:
         raise FrameError(f'copying {name} to the Frame failed: {(e.stderr or "").strip()[-300:]}')
-    if executable and not shutil.which('rsync'):
+    if executable and not rsync:
         ssh(f'chmod u+x {shlex.quote(dest)}')
 
 

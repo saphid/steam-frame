@@ -93,7 +93,7 @@ already ships. [How each feature works](docs/frame-control.md).
 | | Download | Needs |
 |---|---|---|
 | **macOS** (Apple Silicon) | [Frame-Control-mac-arm64.dmg](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-mac-arm64.dmg) | Python 3 (`xcode-select --install`) |
-| **Windows** 10 / 11 (x64) | [Frame-Control-Setup-x64.exe](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-Setup-x64.exe) · [portable .zip](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-win-x64.zip) | Nothing extra: Python is bundled |
+| **Windows** 10 / 11 (x64) | [Frame-Control-Setup-x64.exe](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-Setup-x64.exe) · [portable .zip](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-win-x64.zip) | Nothing extra: Python is bundled, and SSH is built into Windows |
 | **Linux** (x64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-x86_64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-amd64.deb) | `python3` and `ssh` (most desktops have both) |
 | **Linux** (arm64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.deb) | same |
 

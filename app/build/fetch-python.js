@@ -28,7 +28,8 @@ function get(url) {
 }
 
 (async () => {
-  if (fs.existsSync(path.join(OUT, "python.exe")) && fs.readFileSync(path.join(OUT, ".version"), "utf8") === VERSION) {
+  const stamp = path.join(OUT, ".version");
+  if (fs.existsSync(path.join(OUT, "python.exe")) && fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8") === VERSION) {
     console.log(`Python ${VERSION} already in ${OUT}`);
     return;
   }

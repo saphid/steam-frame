@@ -8,11 +8,11 @@ As of 2026-09-25 no other desktop app manages the Frame end to end.
 the headset over SSH. [FrameDrop](https://framedropvr.com) sideloads but is
 Windows-only. Steam Link views the headset.
 
-You can also run the same UI in a browser without the app, from a checkout on
-macOS or Linux:
+You can also run the same UI in a browser without the app, from a checkout:
 
 ```sh
-./scripts/frame-ui.sh        # opens http://127.0.0.1:47810 in its own window
+./scripts/frame-ui.sh        # macOS: opens http://127.0.0.1:47810 in its own window
+python3 ui/server.py         # anywhere: then open http://127.0.0.1:47810
 ```
 
 ## Features

@@ -39,6 +39,8 @@ import frame_store  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 FRAME = os.environ.get("FRAME_ALIAS", "frame")
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", FRAME):
+    sys.exit(f"FRAME_ALIAS must be a plain host alias, not {FRAME!r}")
 # Reuse one SSH connection for the frequent status/screenshot calls, where ssh
 # supports it (not on Windows: there every command connects on its own).
 CONTROL = frame_host.control_path()
@@ -763,7 +765,7 @@ POST = {"/api/android/display": android_display, "/api/android": android,"/api/l
 
 def _pipe_reader(pipe):
     """Chunks from a pipe via a thread; select() can't wait on pipes on Windows."""
-    chunks = queue.Queue(maxsize=64)
+    chunks = queue.Queue()  # unbounded: the pump never blocks, so it ends at EOF
 
     def pump():
         try:
@@ -791,7 +793,8 @@ def push_file(path, dest="Downloads/"):
     """Copy a file to the Frame (as scripts/push.sh): rsync where both ends have it, else scp."""
     name = Path(path).name
     try:
-        if shutil.which("rsync") and ssh("command -v rsync >/dev/null && echo yes || true").strip() == "yes":
+        # Not on Windows: a Windows rsync (cwRsync, MSYS2) wouldn't take our POSIX -e quoting.
+        if not frame_host.WINDOWS and shutil.which("rsync") and ssh("command -v rsync >/dev/null && echo yes || true").strip() == "yes":
             cmd = ["rsync", "-a", "-e", shlex.join(SSH), str(path), f"{FRAME}:{shlex.quote(dest)}"]
         else:
             # Modern scp uses SFTP, so the remote path isn't parsed by a shell.

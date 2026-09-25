@@ -40,8 +40,8 @@ def key():
         p = subprocess.run(['security', 'find-generic-password', '-s', KEYCHAIN[0], '-a', KEYCHAIN[1], '-w'],
                            capture_output=True, text=True)
     if p is None or p.returncode != 0 or not p.stdout.strip():
-        raise DBError('No compatibility-database key in the Keychain '
-                      f'(service {KEYCHAIN[0]}, account {KEYCHAIN[1]})')
+        raise DBError('No compatibility-database key (set FRAME_CONTROL_KEY, or on macOS the Keychain '
+                      f'item service {KEYCHAIN[0]}, account {KEYCHAIN[1]})')
     return p.stdout.strip()
 
 

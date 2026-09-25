@@ -109,7 +109,7 @@ function ping(target) {
 
 async function startServer() {
   const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1",
-                PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", FRAME_CONTROL_APP: "1" };  // UTF-8 even on Windows
+                PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", FRAME_CONTROL_APP: "1" };
   python = await findPython(env);
   if (!python) throw new Error(`Frame Control needs Python 3.8 or later. ${PYTHON_HELP}`);
   if (!await hasSsh(env)) throw new Error(`Frame Control needs the ssh command. ${SSH_HELP}`);
@@ -118,7 +118,8 @@ async function startServer() {
   const log = fs.openSync(LOG, "a");
   fs.writeSync(log, `\n--- ${new Date().toISOString()} ${python} ${SERVER} --port ${port}\n`);
   // stdin stays open while the app runs; the server exits cleanly when it closes.
-  const child = spawn(python, [SERVER, "--port", String(port), "--exit-on-eof"],
+  // -X utf8: the bundled Windows Python ignores PYTHON* variables (isolated mode).
+  const child = spawn(python, ["-X", "utf8", SERVER, "--port", String(port), "--exit-on-eof"],
                       { env, stdio: ["pipe", log, log], windowsHide: true });
   child.stdin.on("error", () => {});
   fs.closeSync(log);

@@ -1100,7 +1100,7 @@ function upload(file, mode) {
 }
 async function sendFiles(files) {
   for (const f of files) {
-    if (!f.size) { toast(`${f.name}: folders and empty files aren't supported here; use scripts/push.sh`, true); continue; }
+    if (!f.size) { toast(`${f.name}: folders and empty files aren't supported here; zip the folder first`, true); continue; }
     const apk = f.name.toLowerCase().endsWith(".apk");
     await act(apk ? `Install ${f.name}` : `Copy ${f.name} to ~/Downloads`, () => upload(f, apk ? "apk" : "push"));
   }

@@ -27,7 +27,8 @@
     },
     "files": [
       "main.js",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "extraResources": [
       {
