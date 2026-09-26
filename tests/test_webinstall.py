@@ -328,6 +328,10 @@ class ServerJobs(unittest.TestCase):
         self.assertEqual((job["phase"], job["message"]), ("done", "ok"))
 
     def stall_then_shutdown(self, scheme, reply):
+        if os.name == "nt":
+            # shutdown() from another thread doesn't wake a blocked recv on Windows, and
+            # closing the handle under a TLS read isn't safe; see web-install.md.
+            self.skipTest("Windows: a stalled download is only dropped when the app stops the server")
         """Start a download from a server that stalls after sending reply; shutdown must stop it quickly."""
         stall = socket.socket()
         stall.bind(("127.0.0.1", 0))

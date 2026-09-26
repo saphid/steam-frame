@@ -148,3 +148,11 @@ The manifest's file URL must then be `http://localhost:8000/…` or
   `frame_webinstall.dispatch()` and deletes the folder.
 - The app registers the scheme each time it starts, so the last Frame Control
   started (e.g. a development checkout) handles the links.
+
+**Quitting during a stalled download.** On macOS and Linux, quitting stops a
+download at once (`shutdown()` on its socket wakes the blocked read). On
+Windows that doesn't wake a read in another thread, and closing the handle
+under a TLS read isn't safe, so a download that has stalled holds the quit for
+the 4-second grace period until the app stops the server; the partial file is
+removed on the next start. Downloads that are still moving stop at their next
+read either way.
