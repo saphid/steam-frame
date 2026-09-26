@@ -249,7 +249,7 @@ def save_shots(body):
         try:
             try:
                 r = subprocess.run(["scp", "-p", *SSH[1:], *(f"{FRAME}:{p}" for p in todo), str(incoming)],
-                                   capture_output=True, text=True, timeout=300)
+                                   capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=300)
             except subprocess.TimeoutExpired:
                 raise Failure("Copying screenshots timed out")
             if r.returncode != 0:

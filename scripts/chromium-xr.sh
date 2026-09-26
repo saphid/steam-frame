@@ -39,11 +39,17 @@ case "${1:-}" in
     # need to be open. The app starts in $HOME, so the profile path is relative.
     # Without --no-first-run and --password-store=basic, startup can stop at a
     # first-run or keyring prompt before DevTools comes up.
+    # --disable-seccomp-filter-sandbox: under the XR seccomp policy, SteamVR's
+    # client reads /proc/self/status through the file broker, gets the
+    # broker's pid, and SteamVR binds the app to the wrong process, so
+    # xrCreateInstance fails. The namespace sandbox stays on, but seccomp is
+    # off for every process, so keep this profile for VR sites.
     exec "$here/panel-on-frame.sh" --name chromium-xr -- '~/chromium-xr/chrome' \
       --user-data-dir=.config/chromium-xr \
       --enable-features=OpenXR \
       --ozone-platform=x11 \
       --no-first-run --no-default-browser-check --password-store=basic \
+      --disable-seccomp-filter-sandbox \
       --remote-debugging-port="$DEVTOOLS_PORT" \
       "${2:-https://immersive-web.github.io/webxr-samples/}"
     ;;
