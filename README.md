@@ -147,13 +147,19 @@ computer.
    Connection**, which finds the headset, creates an SSH key, and asks for that
    password once in a terminal window. If it can't find the Frame, type the
    IP address from the Frame's Quick Settings.
+
+   Before asking for the password it tries Valve's SteamOS devkit pairing: if
+   the headset shows a pairing request, approve it and no password is needed.
+   (**Inferred from Valve's source** ([steamos-devkit-service](https://gitlab.steamos.cloud/devkit/steamos-devkit-service)),
+   not yet verified on a Frame; see [SSH](docs/ssh.md#password-free-pairing-steamos-devkit-service).)
 3. That's it. The app now reaches the headset whenever it's awake and on the
    same network. For anywhere else, see [Tailscale](docs/tailscale.md).
 
 **What it changes:** only what you click. Installs go to your user account on
 the Frame (`--user` Flatpaks, Lepton instances, Steam downloads), and nothing
 needs `sudo` except the power buttons. On your computer it adds a `Host frame`
-entry to `~/.ssh/config` and a key at `~/.ssh/id_ed25519_frame`.
+entry to `~/.ssh/config` and keys at `~/.ssh/id_ed25519_frame` and
+`~/.ssh/id_rsa_frame_devkit` (the pairing service only takes RSA keys).
 
 ## Feedback
 
