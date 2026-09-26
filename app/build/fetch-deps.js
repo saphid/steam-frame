@@ -49,7 +49,10 @@ function get(url, redirects = 5) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         if (!redirects) return reject(new Error(`${url}: too many redirects`));
-        return resolve(get(new URL(res.headers.location, url).href, redirects - 1));
+        let next;
+        try { next = new URL(res.headers.location, url).href; }
+        catch { return reject(new Error(`${url}: bad redirect ${res.headers.location}`)); }
+        return resolve(get(next, redirects - 1));
       }
       if (res.statusCode !== 200) return reject(new Error(`${url}: HTTP ${res.statusCode}`));
       const chunks = [];

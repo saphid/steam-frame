@@ -204,8 +204,8 @@ def apk_info(path):
         }
         try:
             info['icon_png'] = _icon_png(z, names, _icons(app.get('icon'), res))
-        except (zipfile.BadZipFile, RuntimeError, OSError):
-            pass  # a missing icon shouldn't stop the install
+        except Exception:  # noqa: BLE001 - any unreadable icon just means no icon
+            pass
     return info
 
 
