@@ -70,6 +70,7 @@ seccomp off (below), so the patch only matters once that's fixed too.
 ```sh
 BUILD_HOST=my-linux-box scripts/chromium-xr.sh install  # your build host; scp, unpack to ~/chromium-xr
 scripts/chromium-xr.sh launch [URL]     # its own VR panel, --enable-features=OpenXR
+scripts/chromium-xr.sh steam            # adds "Chromium XR" to the Steam library
 scripts/chromium-xr.sh check            # prints isSessionSupported('immersive-vr')
 ```
 
@@ -81,7 +82,25 @@ collide with the Flatpak's 9222. When a page enters VR, Chrome asks
 **Allow VR?** in the browser panel; choose *Allow this time* or *Allow while
 visiting the site*.
 
-**Seccomp is off.** `launch` passes `--disable-seccomp-filter-sandbox`. With
+Both ways of starting it run
+[`frame/chromium-xr/launch.sh`](../frame/chromium-xr/launch.sh), copied to
+`~/Applications/ChromiumXR/launch.sh` on the Frame, which holds Chrome's flags.
+It sits outside `~/chromium-xr` so `install` doesn't delete it.
+
+**From the Steam library (verified 2026-09-26).** `steam` adds a non-Steam
+shortcut called "Chromium XR" (with the Flathub Chromium icon, if that's
+installed) through the Steam client's DevTools port, the same way as T3 Code
+([apks.md](apks.md)), without restarting Steam. It saves the app id in
+`~/Applications/ChromiumXR/shortcut-appid`, so rerunning it, even after you
+rename the shortcut in the library, doesn't add a second one. On this Frame
+the shortcut app id is 2240749789. Launching it from the library gives
+Chromium its own panel, `valve.steam.desktopgame.2240749789`, like any other
+app. A Steam launch doesn't open a DevTools port, so `check` needs `launch`.
+Chromium runs one browser per profile: while the Steam-launched one is open,
+`launch` opens its URL in that window, without DevTools, then prints
+`failed: ... exited` because no new window appeared. Close it first.
+
+**Seccomp is off.** The wrapper passes `--disable-seccomp-filter-sandbox`. With
 the XR seccomp policy on, SteamVR's client reads `/proc/self/status` through
 Chrome's file broker and gets the broker's pid. SteamVR then binds the app to
 the wrong process ("Unable to init path manager: VRInitError_Init_Internal")
