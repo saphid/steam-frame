@@ -36,9 +36,11 @@ ssh frame                          # passwordless from now on
 `connect.sh` does four things:
 
 - finds the headset (`frame.local`, then `frame`, or the IP/host you pass in)
-- creates a dedicated key (`~/.ssh/id_ed25519_frame`)
+- creates dedicated keys (`~/.ssh/id_ed25519_frame`, plus `~/.ssh/id_rsa_frame_devkit` for pairing)
 - adds a `Host frame` block to `~/.ssh/config`
-- runs `ssh-copy-id`, which asks for the Developer Mode password once
+- tries SteamOS devkit pairing (approve on the headset, no password; **inferred**,
+  see [SSH](ssh.md#password-free-pairing-steamos-devkit-service)), else runs
+  `ssh-copy-id`, which asks for the Developer Mode password once
 
 Run `./scripts/connect.sh --harden` later if you want to turn off SSH password
 logins.
