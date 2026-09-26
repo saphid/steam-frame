@@ -58,8 +58,8 @@ About 4,500 F-Droid apps rated for the Frame. One click installs each as its own
 <tr>
 <td valign="top">
 
-**📁 Files and clipboard**<br>
-Drag files onto the window to send them. Send text or your clipboard straight to the headset's desktop.
+**📁 Files, games and clipboard**<br>
+Drag files onto the window to send them. Drop a game's .zip, folder or .exe to add it to the Steam library, with Proton or the Linux runtime picked for you. Send text or your clipboard straight to the headset's desktop.
 
 </td>
 <td valign="top">
@@ -86,7 +86,8 @@ SSH, SFTP, Steam Link, remote desktop, volume, sleep, restart and shut down.
 </table>
 
 Nothing is installed on the Frame for any of this: the app uses what SteamOS
-already ships. [How each feature works](docs/frame-control.md).
+already ships (sideloading a game copies Valve's own devkit scripts to
+`~/devkit-utils`, as Valve's Devkit Client does). [How each feature works](docs/frame-control.md).
 
 ## Install
 
@@ -156,7 +157,8 @@ computer.
    same network. For anywhere else, see [Tailscale](docs/tailscale.md).
 
 **What it changes:** only what you click. Installs go to your user account on
-the Frame (`--user` Flatpaks, Lepton instances, Steam downloads), and nothing
+the Frame (`--user` Flatpaks, Lepton instances, Steam downloads, sideloaded
+games in `~/devkit-game`), and nothing
 needs `sudo` except the power buttons. On your computer it adds a `Host frame`
 entry to `~/.ssh/config` and keys at `~/.ssh/id_ed25519_frame` and
 `~/.ssh/id_rsa_frame_devkit` (the pairing service only takes RSA keys).
@@ -183,6 +185,7 @@ Frame's software fits together, all checked against a real headset and labelled
 | [Scripts and headset setup](docs/scripts.md) | The command-line helpers, minimum typing, streaming options, floating panels |
 | [How the Frame works](docs/how-the-frame-works.md) | SteamVR → gamescope → Plasma, verified facts, debugging |
 | [Android apps (Lepton)](docs/apks.md) | Sideloading, the rated F-Droid catalogue, per-app instances |
+| [Sideloading Linux and Windows games](docs/sideloading.md) | A .zip, folder or .exe as a Steam Devkit Game, runtime detection |
 | [Steam games](docs/steam-games.md) · [VR video](docs/vr-video.md) · [WebXR in Chromium](docs/webxr-chromium.md) | Installing and buying, watching VR180/360, the Chromium build |
 | [SSH](docs/ssh.md) · [Streaming](docs/streaming.md) · [Files](docs/file-transfer.md) · [Panels](docs/panels.md) · [Tailscale](docs/tailscale.md) | Topic notes |
 | [Open questions](docs/open-questions.md) | What's still unchecked |

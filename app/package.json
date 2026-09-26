@@ -56,6 +56,14 @@
         ]
       },
       {
+        "from": "../frame/devkit-utils",
+        "to": "frame/devkit-utils",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
+        ]
+      },
+      {
         "from": "../apk-catalog",
         "to": "apk-catalog",
         "filter": [

@@ -15,6 +15,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shlex
 import shutil
 import signal
@@ -36,6 +37,7 @@ import frame_android  # noqa: E402
 import frame_catalog  # noqa: E402
 import frame_host  # noqa: E402
 import frame_store  # noqa: E402
+import frame_titles  # noqa: E402
 
 frame_host.trust_bundled_cas()
 
@@ -472,6 +474,120 @@ def android(body):
     raise Failure("unknown action", 400)
 
 
+# ---- Sideloaded titles (Linux/Windows builds as Steam Devkit Games) --------
+#
+# Installing is two steps: inspect (a dropped file is uploaded and a zip
+# unpacked here, once) returns a token and the detected target and runtime for
+# the page to confirm; install then runs in the background with progress the
+# page polls. Unconfirmed uploads are dropped after STAGE_TTL.
+
+STAGE_TTL = 3600
+_titles_lock = threading.Lock()
+_staged = {}  # token -> {"plan", "dir" (an upload's temp dir or None), "time"}
+_title_jobs = {}  # token -> {"stage", "fraction", "done", "error", "title", "time"}
+
+
+def _drop_staged(entry):
+    frame_titles.discard(entry["plan"])
+    if entry.get("dir"):
+        shutil.rmtree(entry["dir"], ignore_errors=True)
+
+
+def _purge_titles(now=None):
+    now = now or time.time()
+    with _titles_lock:
+        stale = [_staged.pop(t) for t in [t for t, e in _staged.items() if now - e["time"] > STAGE_TTL]]
+        for t in [t for t, j in _title_jobs.items() if j["done"] and now - j["time"] > STAGE_TTL]:
+            del _title_jobs[t]
+    for e in stale:
+        _drop_staged(e)
+
+
+def stage_title(path, temp_dir=None, name=None):
+    """Inspect a .zip, folder or program and keep it for install; returns the plan and a token."""
+    _purge_titles()
+    try:
+        plan = frame_titles.inspect(path, name)
+    except BaseException as e:
+        # Whatever went wrong, nothing will ever claim this upload.
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        if isinstance(e, frame_android.FrameError):
+            raise Failure(str(e), 400)
+        raise
+    token = secrets.token_hex(12)
+    with _titles_lock:
+        _staged[token] = {"plan": plan, "dir": temp_dir, "time": time.time()}
+    return {"message": f"Read {plan['source']}: {plan['target']} with {plan['runtime_label']}",
+            "token": token, "plan": frame_titles.public(plan)}
+
+
+def _run_title_install(token, entry, name, exe, runtime):
+    def update(**fields):  # the page reads jobs from other threads; change them under the lock
+        with _titles_lock:
+            _title_jobs[token].update(fields)
+
+    try:
+        m = frame_titles.install_plan(entry["plan"], name=name, exe=exe, runtime=runtime,
+                                      progress=lambda stage, fraction: update(stage=stage, fraction=fraction))
+        update(title=m, message=f"Installed {m['id']} in the Steam library ({m['runtime_label']})")
+    except frame_android.FrameError as e:
+        update(error=str(e))
+    except Exception as e:
+        update(error=f"{type(e).__name__}: {e}")
+    finally:
+        _drop_staged(entry)
+        update(done=True, time=time.time())
+
+
+def titles(body):
+    """Sideloaded titles (frame_titles.py): inspect a local path, install, discard, launch, remove."""
+    action = body.get("action")
+    if action == "inspect":
+        # The app's page passes a dropped folder's path (Electron knows it); browsers upload instead.
+        path = str(body.get("path") or "")
+        if not os.path.isabs(path) or not os.path.exists(path):
+            raise Failure("inspect needs the absolute path of a .zip, folder or program", 400)
+        return stage_title(path, name=body.get("name") or None)
+    if action in ("install", "discard"):
+        token = str(body.get("token") or "")
+        with _titles_lock:
+            entry = _staged.pop(token, None)
+        if not entry:
+            raise Failure("that upload has expired; drop the file again", 400)
+        if action == "discard":
+            _drop_staged(entry)
+            return {"message": "Discarded"}
+        with _titles_lock:
+            _title_jobs[token] = {"stage": "Starting", "fraction": 0, "done": False, "error": None,
+                                  "message": None, "title": None, "time": time.time()}
+        ensure_master()
+        opt = lambda k: str(body.get(k) or "") or None  # noqa: E731
+        threading.Thread(target=_run_title_install, daemon=True,
+                         args=(token, entry, opt("name"), opt("exe"), opt("runtime"))).start()
+        return {"message": f"Installing {entry['plan']['source']}", "job": token}
+    if action not in ("launch", "remove"):
+        raise Failure("unknown action", 400)
+    gid = str(body.get("id", ""))
+    if not frame_titles.ID_RE.match(gid):
+        raise Failure("bad title id", 400)
+    ensure_master()
+    try:
+        m = getattr(frame_titles, action)(gid)
+    except frame_android.FrameError as e:
+        raise Failure(str(e))
+    return {"message": f"{'Launching' if action == 'launch' else 'Removed'} {m['id']}"}
+
+
+def title_job(query):
+    with _titles_lock:
+        job = _title_jobs.get((parse_qs(query).get("token") or [""])[0])
+        snapshot = job and {k: v for k, v in job.items() if k != "time"}
+    if not snapshot:
+        raise Failure("no such install", 404)
+    return snapshot
+
+
 # ---- Android display (wm size / wm density / font_scale over ADB) -----------
 #
 # Each running Lepton instance listens for ADB on the Frame (5555 is Lepton
@@ -762,7 +878,7 @@ def android_display(body):
     return {"message": f"Port {port}: " + "; ".join(c.split(";")[0] for c in cmds), "display": now}
 
 
-POST = {"/api/android/display": android_display, "/api/android": android,"/api/launch": launch, "/api/steam": steam, "/api/volume": set_volume, "/api/clipboard": clipboard,
+POST = {"/api/android/display": android_display, "/api/android": android, "/api/titles": titles, "/api/launch": launch, "/api/steam": steam, "/api/volume": set_volume, "/api/clipboard": clipboard,
         "/api/flatpak": flatpak, "/api/open": open_thing, "/api/shots/save": save_shots}
 
 
@@ -864,6 +980,11 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/android":
                 ensure_master()
                 self.send_json({"apps": frame_android.list_apps()})
+            elif path == "/api/titles":
+                ensure_master()
+                self.send_json({"titles": frame_titles.list_titles()})
+            elif path == "/api/titles/job":
+                self.send_json(title_job(url.query))
             elif path == "/api/android/displays":
                 self.send_json(android_displays())
             elif path == "/api/android/reports":
@@ -982,7 +1103,8 @@ class Handler(BaseHTTPRequestHandler):
             _live_tunnels.discard(proc)
 
     def upload(self):
-        """Raw file body. X-Filename names it; X-Mode is 'push', 'apk' (install) or 'apkinfo' (read only)."""
+        """Raw file body. X-Filename names it; X-Mode is 'push', 'apk' (install), 'apkinfo' (read only)
+        or 'title' (a .zip or program to sideload: inspected and kept for /api/titles install)."""
         name = os.path.basename(unquote(self.headers.get("X-Filename", "")))
         mode = self.headers.get("X-Mode", "push")
         length = int(self.headers.get("Content-Length") or 0)
@@ -993,6 +1115,7 @@ class Handler(BaseHTTPRequestHandler):
         if mode in ("apk", "apkinfo") and not name.lower().endswith(".apk"):
             raise Failure("APK install needs a .apk file", 400)
         tmp = Path(tempfile.mkdtemp(prefix="frame-ui-"))
+        keep = False
         try:
             dest = tmp / name
             with open(dest, "wb") as f:
@@ -1016,6 +1139,9 @@ class Handler(BaseHTTPRequestHandler):
                 except frame_android.FrameError as e:
                     info["blocker"] = str(e)
                 return {"message": f"Read {info['label']} {info['version']}", "apk": info}
+            if mode == "title":
+                keep = True  # stage_title owns tmp now, and removes it on failure
+                return stage_title(str(dest), temp_dir=str(tmp))
             if mode == "apk":
                 ensure_master()
                 try:
@@ -1025,7 +1151,8 @@ class Handler(BaseHTTPRequestHandler):
                 return {"message": f"Installed {m['label']} as its own app in the Steam library", "app": m}
             return {"message": push_file(dest)}
         finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+            if not keep:
+                shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main():
@@ -1061,6 +1188,7 @@ def main():
         for proc in list(_live_tunnels):  # ADB forwards and video streams cut off mid-way
             if proc.poll() is None:
                 proc.terminate()
+        _purge_titles(now=float("inf"))  # unconfirmed title uploads
 
 
 if __name__ == "__main__":
