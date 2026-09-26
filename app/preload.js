@@ -1,7 +1,17 @@
 // Lets the page read this computer's clipboard through Electron, so sending it
-// to the Frame needs no pbpaste, PowerShell, xclip or wl-clipboard.
-const { contextBridge, ipcRenderer } = require("electron");
+// to the Frame needs no pbpaste, PowerShell, xclip or wl-clipboard. Also tells
+// the page where a dropped file or folder lives, so a folder can be sideloaded
+// as a title without zipping it (the local server reads it from there).
+// It also receives frame-control://install links (docs/web-install.md): only
+// what the link asked for, never an install; the page asks the user first.
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("frameApp", {
   readClipboard: () => ipcRenderer.invoke("clipboard:read"),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file) || ""; } catch { return ""; } },
+  onInstallLink: (cb) => {
+    ipcRenderer.removeAllListeners("install-link");
+    ipcRenderer.on("install-link", (_e, req) => cb({ kind: req.kind, target: req.target }));
+    ipcRenderer.send("install-link:ready");
+  },
 });

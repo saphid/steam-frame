@@ -33,7 +33,8 @@ unless your router's DNS registers DHCP client names.
 
 - **Verified on device (2026-09-25):** `avahi-daemon` is running on the Frame
   and `frame.local` resolves from the Mac over mDNS.
-- `scripts/connect.sh` tries `frame.local`, then `frame`. If neither works, it tells you to re-run it with the IP.
+- `scripts/connect.sh` tries `frame.local`, then `frame`, then an mDNS browse for
+  the devkit service (below). If none works, it tells you to re-run it with the IP.
   Once you have a working address, the `Host frame` alias means you just type
   `ssh frame`.
 - To check discovery yourself: `dns-sd -G v4 frame.local` (Ctrl-C to stop), or
@@ -55,9 +56,48 @@ Host frame
   HostName frame.local
   User steamos
   IdentityFile ~/.ssh/id_ed25519_frame
+  IdentityFile ~/.ssh/id_rsa_frame_devkit
   IdentitiesOnly yes
   ServerAliveInterval 30
 ```
+
+The script only asks for the password if the pairing below doesn't work.
+
+## Password-free pairing (SteamOS devkit service)
+
+From Valve's source ([steamos-devkit-service](https://gitlab.steamos.cloud/devkit/steamos-devkit-service),
+[steamos-devkit](https://gitlab.steamos.cloud/devkit/steamos-devkit) client). **Verified on a
+Frame 2026-09-26** (BUILD_ID 20260922.6101926): the service runs with Developer Mode
+on, `properties.json` answers with `"login": "steamos"`, the headset advertises
+`_steamos-devkit._tcp` as `frame`, and `/register` needs pairing mode (below). The
+approve prompt and key install are not verified yet. SteamOS's devkit service is
+what Valve's Devkit Client uses to pair. `scripts/connect.sh` and
+`ui/frame_connect.py` try it first:
+
+- The headset serves HTTP on port **32000** and advertises mDNS
+  `_steamos-devkit._tcp`. `GET /properties.json` gives the `login` user; the
+  script uses it as `User` (unless you set `FRAME_USER`, or it says `root`),
+  for the password fallback too, and keeps it on re-runs.
+- **Open Steam Settings → Developer → Pair new host in the headset first.**
+  Otherwise `/register` answers at once with `403` `"please put the Steam client
+  in pairing mode: Settings -> Developer -> Pair new host"` (verified). The
+  scripts say so and keep asking for 2 minutes while you open it.
+- `POST /register` with `ssh-rsa <key> <comment> 900b919520e4cf601998a71eec318fec`
+  (a fixed token from Valve's client) shows an approve prompt inside the
+  headset naming the comment (`frame-control@<your computer>`). It waits 30 s,
+  then installs the key for the device user and turns `sshd` on. The reply is
+  `200 Registered`, or `403` with `{"error": ...}` (declined, timed out, Steam
+  not running).
+- It only accepts **RSA** keys, hence the second key,
+  `~/.ssh/id_rsa_frame_devkit` (3072-bit).
+- A host counts as found if port 22 **or** 32000 answers. With no host given,
+  and `frame.local`/`frame` unreachable, it browses `_steamos-devkit._tcp` with
+  `dns-sd` (macOS) or `avahi-browse` (Linux) for a few seconds if installed.
+- Port 32000 closed, a timeout, or an error: the script says why and falls back
+  to copying the ed25519 key with the Developer Mode password, as before.
+
+Anyone on your network can send the request, so only approve a prompt you
+started. `curl http://<frame-ip>:32000/properties.json` shows whether the service is up.
 
 `~/.ssh/authorized_keys` lives under `/home`, which SteamOS keeps across OS
 updates (inferred from Deck; the Frame uses the same A/B image scheme).

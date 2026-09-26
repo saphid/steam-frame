@@ -58,8 +58,8 @@ About 4,500 F-Droid apps rated for the Frame. One click installs each as its own
 <tr>
 <td valign="top">
 
-**📁 Files and clipboard**<br>
-Drag files onto the window to send them. Send text or your clipboard straight to the headset's desktop.
+**📁 Files, games and clipboard**<br>
+Drag files onto the window to send them. Drop a game's .zip, folder or .exe to add it to the Steam library, with Proton or the Linux runtime picked for you. Send text or your clipboard straight to the headset's desktop.
 
 </td>
 <td valign="top">
@@ -86,7 +86,8 @@ SSH, SFTP, Steam Link, remote desktop, volume, sleep, restart and shut down.
 </table>
 
 Nothing is installed on the Frame for any of this: the app uses what SteamOS
-already ships. [How each feature works](docs/frame-control.md).
+already ships (sideloading a game copies Valve's own devkit scripts to
+`~/devkit-utils`, as Valve's Devkit Client does). [How each feature works](docs/frame-control.md).
 
 ## Install
 
@@ -147,13 +148,21 @@ computer.
    Connection**, which finds the headset, creates an SSH key, and asks for that
    password once in a terminal window. If it can't find the Frame, type the
    IP address from the Frame's Quick Settings.
+
+   Before asking for the password it tries Valve's SteamOS devkit pairing: in
+   the headset, open Steam Settings → Developer → **Pair new host** and approve
+   the request, and no password is needed. (The service and the pairing-mode
+   step are verified on a Frame; the approval itself isn't yet. See
+   [SSH](docs/ssh.md#password-free-pairing-steamos-devkit-service).)
 3. That's it. The app now reaches the headset whenever it's awake and on the
    same network. For anywhere else, see [Tailscale](docs/tailscale.md).
 
 **What it changes:** only what you click. Installs go to your user account on
-the Frame (`--user` Flatpaks, Lepton instances, Steam downloads), and nothing
+the Frame (`--user` Flatpaks, Lepton instances, Steam downloads, sideloaded
+games in `~/devkit-game`), and nothing
 needs `sudo` except the power buttons. On your computer it adds a `Host frame`
-entry to `~/.ssh/config` and a key at `~/.ssh/id_ed25519_frame`.
+entry to `~/.ssh/config` and keys at `~/.ssh/id_ed25519_frame` and
+`~/.ssh/id_rsa_frame_devkit` (the pairing service only takes RSA keys).
 
 ## Feedback
 
@@ -177,6 +186,8 @@ Frame's software fits together, all checked against a real headset and labelled
 | [Scripts and headset setup](docs/scripts.md) | The command-line helpers, minimum typing, streaming options, floating panels |
 | [How the Frame works](docs/how-the-frame-works.md) | SteamVR → gamescope → Plasma, verified facts, debugging |
 | [Android apps (Lepton)](docs/apks.md) | Sideloading, the rated F-Droid catalogue, per-app instances |
+| [Sideloading Linux and Windows games](docs/sideloading.md) | A .zip, folder or .exe as a Steam Devkit Game, runtime detection |
+| [Install links for websites](docs/web-install.md) | `frame-control://install` links and manifests, the rules, a button to paste |
 | [Steam games](docs/steam-games.md) · [VR video](docs/vr-video.md) · [WebXR in Chromium](docs/webxr-chromium.md) | Installing and buying, watching VR180/360, the Chromium build |
 | [SSH](docs/ssh.md) · [Streaming](docs/streaming.md) · [Files](docs/file-transfer.md) · [Panels](docs/panels.md) · [Tailscale](docs/tailscale.md) | Topic notes |
 | [Open questions](docs/open-questions.md) | What's still unchecked |

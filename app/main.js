@@ -9,6 +9,7 @@ const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
+const { SCHEME, parseInstallLink, linkFromArgv } = require("./install-link");
 
 const run = promisify(execFile);
 
@@ -233,13 +234,56 @@ async function firstRunCheck() {
   if (response === 0) setUpConnection();
 }
 
-ipcMain.handle("clipboard:read", (e) => {
-  if (!win || e.sender !== win.webContents || !url) return "";
+// IPC only from our own page in our own window.
+function fromUi(e) {
+  if (!win || e.sender !== win.webContents || !url || !e.senderFrame) return false;
   try {
-    if (new URL(e.senderFrame.url).origin !== new URL(url).origin) return "";
-  } catch { return ""; }
-  return clipboard.readText();
+    return new URL(e.senderFrame.url).origin === new URL(url).origin;
+  } catch { return false; }
+}
+
+ipcMain.handle("clipboard:read", (e) => fromUi(e) ? clipboard.readText() : "");
+
+// frame-control://install links from websites (docs/web-install.md). They can
+// arrive before the window or server exists (macOS open-url on a cold launch),
+// so they wait here until the page asks for them. The page checks the link with
+// the server and installs nothing until the user confirms in its dialog.
+const pendingLinks = [];
+let linkPage = null;  // the webContents whose current page is listening
+
+function openInstallLink(raw) {
+  const req = parseInstallLink(raw);
+  if (!req) {
+    app.whenReady().then(() => dialog.showErrorBox("Frame Control can't use this link",
+      "Install links look like frame-control://install?manifest=https://… or frame-control://install?url=https://…"));
+    return;
+  }
+  pendingLinks.push(req);
+  if (pendingLinks.length > 5) pendingLinks.shift();  // a page opening links in a loop
+  deliverLinks();
+  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+}
+
+function deliverLinks() {
+  if (!win || !linkPage || linkPage !== win.webContents) return;
+  while (pendingLinks.length) win.webContents.send("install-link", pendingLinks.shift());
+}
+
+ipcMain.on("install-link:ready", (e) => {
+  if (!fromUi(e)) return;
+  linkPage = e.sender;
+  deliverLinks();
 });
+
+function registerScheme() {
+  // A checkout runs as `electron .`, so the OS must be told the script too.
+  // (macOS takes the scheme from Info.plist, which only the built app has.)
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) app.setAsDefaultProtocolClient(SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient(SCHEME);
+  }
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -260,7 +304,9 @@ function createWindow() {
   win.webContents.on("will-navigate", (e, target) => {
     if (!url || new URL(target).origin !== new URL(url).origin) e.preventDefault();
   });
-  win.on("closed", () => { win = null; });
+  // A reload or a new page must ask for links again before it gets any.
+  win.webContents.on("did-start-loading", () => { linkPage = null; });
+  win.on("closed", () => { win = null; linkPage = null; });
   load();
 }
 
@@ -326,10 +372,18 @@ function buildMenu() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  // macOS delivers install links here, even before the app is ready.
+  app.on("open-url", (e, link) => { e.preventDefault(); openInstallLink(link); });
+  // Windows and Linux start a second instance with the link as an argument.
+  app.on("second-instance", (_e, argv) => {
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+    const link = linkFromArgv(argv);
+    if (link) openInstallLink(link);
   });
+  const firstLink = IS_MAC ? null : linkFromArgv(process.argv);
+  if (firstLink) openInstallLink(firstLink);
   app.whenReady().then(() => {
+    registerScheme();
     buildMenu();
     createWindow();
   });

@@ -221,12 +221,23 @@
   .and-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 22px; align-items: start; }
   .and-col { display: grid; gap: 22px; align-content: start; }
   .rep-item .s { white-space: normal; }
-  #repDlg { background: #1e2329; color: var(--text); border: 1px solid rgba(255,255,255,.1); border-radius: 4px;
+  #repDlg, #titleDlg, #wiDlg { background: #1e2329; color: var(--text); border: 1px solid rgba(255,255,255,.1); border-radius: 4px;
             padding: 22px; width: min(560px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-  #repDlg::backdrop { background: rgba(0,0,0,.55); }
-  #repDlg h2 { margin: 0 0 14px; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--bright); }
-  #repForm label { display: block; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
-  #repForm label input[type=text], #repForm textarea { margin-top: 5px; }
+  #repDlg::backdrop, #titleDlg::backdrop, #wiDlg::backdrop { background: rgba(0,0,0,.55); }
+  #repDlg h2, #titleDlg h2, #wiDlg h2 { margin: 0 0 14px; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--bright); }
+  #repForm label, #titleForm label { display: block; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  #repForm label input[type=text], #repForm textarea, #titleForm label input, #titleForm label select { margin-top: 5px; }
+  #titleForm select { width: 100%; background: rgba(0,0,0,.28); color: var(--text); border: 1px solid transparent;
+                      border-radius: 3px; padding: 8px 10px; font: inherit; }
+  #titleForm select:focus { outline: none; border-color: var(--blue); }
+  #titleForm .note { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  #titleForm .note.warn { color: #d9a23a; }
+  #titleList { margin-top: 8px; }
+  #wiFacts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 13.5px; }
+  #wiFacts dt { color: var(--muted); }
+  #wiFacts dd { margin: 0; color: var(--bright); overflow-wrap: anywhere; }
+  #wiWarn { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 14px 0 0; }
+  #wiProg:not([hidden]) { display: block; }
   #repForm fieldset { border: 0; padding: 0; margin: 12px 0 0; }
   #repForm legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; }
   #repForm label.opt { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 0 0; color: var(--text); font-size: 13.5px; }
@@ -458,10 +469,13 @@
       <div class="shelf-head"><h2>Send to Frame</h2></div>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to send">
         <b>Drop files here</b>
-        Files land in <code>~/Downloads</code>. <code>.apk</code> files install as their own Android app.
+        Files land in <code>~/Downloads</code>. <code>.apk</code> files install as their own Android app;
+        a game's <code>.zip</code>, folder or <code>.exe</code> becomes a title in the Steam library.
         <input type="file" id="fileInput" multiple hidden>
       </div>
       <div class="progress" id="prog"><i></i></div>
+      <div class="shelf-head" style="margin-top:16px"><h2>Sideloaded titles</h2><span class="count" id="titleCount"></span></div>
+      <div class="list" id="titleList"><div class="sub">Loading…</div></div>
       <textarea id="clipText" style="margin-top:16px" placeholder="Text to put on the Frame's clipboard…"></textarea>
       <div class="row" style="margin-top:8px">
         <button class="action small" id="clipSend">Send text</button>
@@ -566,6 +580,32 @@
       <button type="button" class="small" id="repCancel">Cancel</button>
       <button type="submit" class="action small" id="repSave">Save report</button></div>
   </form>
+</dialog>
+<dialog id="titleDlg" aria-labelledby="titleTitle">
+  <form method="dialog" id="titleForm">
+    <h2 id="titleTitle">Add to the Steam library</h2>
+    <div class="sub" id="titleSrc"></div>
+    <label>Name<input type="text" id="titleName" maxlength="120" required></label>
+    <div class="note" id="titleIdNote"></div>
+    <label>Launches<select id="titleExe"></select></label>
+    <label>Runtime<select id="titleRt"></select></label>
+    <div class="note" id="titleNote"></div>
+    <div class="note warn" id="titleWarn"></div>
+    <div class="row rep-actions"><span class="sub" id="titleMsg"></span><span class="spacer"></span>
+      <button type="button" class="small" id="titleCancel">Cancel</button>
+      <button type="button" class="small" id="titlePush">Copy to ~/Downloads instead</button>
+      <button type="submit" class="action small" id="titleInstall">Install</button></div>
+  </form>
+</dialog>
+<dialog id="wiDlg" aria-labelledby="wiTitle">
+  <h2 id="wiTitle">Install from a website</h2>
+  <dl id="wiFacts"></dl>
+  <p id="wiWarn">A website asked Frame Control to install this. Nothing is downloaded until you click Install.
+    Only install software from sites you trust.</p>
+  <div class="progress" id="wiProg" hidden><i></i></div>
+  <div class="row rep-actions"><span class="sub" id="wiMsg"></span><span class="spacer"></span>
+    <button type="button" class="small" id="wiCancel">Cancel</button>
+    <button type="button" class="action small" id="wiGo" disabled>Install</button></div>
 </dialog>
 <div class="toast" id="toast"></div>
 
@@ -1022,9 +1062,9 @@ document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => setView(
 document.querySelectorAll("[data-eye]").forEach(b => b.onclick = () => setEye(b.dataset.eye));
 
 // ---- controls ----
-$("refreshAll").onclick = refresh;
+$("refreshAll").onclick = () => { refresh(); loadTitles(); };  // titles too: the Frame may have been asleep at start
 document.addEventListener("keydown", e => {
-  if (e.key === "r" && !e.metaKey && !e.ctrlKey && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) refresh();
+  if (e.key === "r" && !e.metaKey && !e.ctrlKey && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) $("refreshAll").onclick();
 });
 document.body.addEventListener("click", async (e) => {
   const b = e.target.closest("button");
@@ -1085,7 +1125,12 @@ drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefau
 $("fileInput").onchange = () => sendFiles([...$("fileInput").files]);
 ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", e => sendFiles([...e.dataTransfer.files]));
+// Folders only show up as directory entries, and only during the drop event itself.
+drop.addEventListener("drop", e => {
+  const items = [...(e.dataTransfer.items || [])].filter(it => it.kind === "file");
+  const dirs = new Set(items.map((it, i) => it.webkitGetAsEntry && it.webkitGetAsEntry()?.isDirectory ? i : -1).filter(i => i >= 0));
+  sendFiles([...e.dataTransfer.files], dirs);
+});
 function upload(file, mode) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -1105,15 +1150,160 @@ function upload(file, mode) {
     xhr.send(file);
   });
 }
-async function sendFiles(files) {
-  for (const f of files) {
-    if (!f.size) { toast(`${f.name}: folders and empty files aren't supported here; zip the folder first`, true); continue; }
+const TITLE_EXT = /\.(zip|exe)$/i;
+async function sendFiles(files, dirs = new Set()) {
+  for (const [i, f] of files.entries()) {
+    const path = window.frameApp?.pathForFile ? window.frameApp.pathForFile(f) : "";
+    if (dirs.has(i)) {
+      if (path) await sideload(f, path, true);
+      else toast(`${f.name}: zip the folder first (folders need the Frame Control app)`, true);
+      continue;
+    }
+    if (!f.size) { toast(`${f.name}: empty files aren't supported`, true); continue; }
+    if (TITLE_EXT.test(f.name)) { await sideload(f, path); continue; }
     const apk = f.name.toLowerCase().endsWith(".apk");
     await act(apk ? `Install ${f.name}` : `Copy ${f.name} to ~/Downloads`, () => upload(f, apk ? "apk" : "push"));
   }
   $("fileInput").value = "";
   refresh();
 }
+
+// ---- sideloaded titles (a Linux or Windows build as a Steam Devkit Game) ----
+const RESERVED_IDS = ["steam", "steamdeckard", "steamvr", "steamvrdeckard", "devkit-steam"];
+function titleId(name) {  // mirrors frame_titles.title_id: the name Steam shows
+  const trim = x => x.replace(/^[_-]+|[_-]+$/g, "");
+  let s = trim(trim(String(name).trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_")).slice(0, 64));
+  if (RESERVED_IDS.includes(s.toLowerCase())) s += "-game";
+  return s;
+}
+const ARCH = { arm64: "ARM64", x86_64: "x86-64", x86: "32-bit x86" };
+function candLabel(c) {
+  const kind = c.format === "pe" ? `Windows ${ARCH[c.arch] || c.arch}` : c.format === "elf" ? `Linux ${ARCH[c.arch] || c.arch}` : "script";
+  return `${c.path} · ${kind} · ${gb(c.size)}${c.skip ? " · helper?" : ""}`;
+}
+// Inspect (upload, or the local path in the app), confirm in the dialog, then install with progress.
+// One at a time, so a second drop doesn't take over the dialog of the first.
+let sideloadQueue = Promise.resolve();
+function sideload(...args) {
+  const run = sideloadQueue.then(() => sideloadOne(...args));
+  sideloadQueue = run.catch(() => {});
+  return run;
+}
+async function sideloadOne(file, path, isDir = false) {
+  const canPush = !isDir && file.size > 0;
+  log(`Reading ${file.name}…`);
+  let r;
+  try { r = path ? await api("/api/titles", { action: "inspect", path }) : await upload(file, "title"); }
+  catch (e) {
+    log(`${file.name}: ${e.message}`, "e");
+    if (canPush && confirm(`${file.name}: ${e.message}\n\nCopy it to ~/Downloads instead?`))
+      await act(`Copy ${file.name} to ~/Downloads`, () => upload(file, "push"));
+    return;
+  }
+  // Its own fresh list, so the dialog can say whether this replaces an installed title.
+  let installed = null;
+  try { installed = new Set((await api("/api/titles")).titles.map(t => String(t.id).toLowerCase())); } catch {}
+  const choice = await confirmTitle(r.plan, canPush, installed);
+  if (choice === "push") {
+    api("/api/titles", { action: "discard", token: r.token }).catch(() => {});
+    await act(`Copy ${file.name} to ~/Downloads`, () => upload(file, "push"));
+    return;
+  }
+  if (!choice) { api("/api/titles", { action: "discard", token: r.token }).catch(() => {}); return; }
+  await installTitle(r.token, choice);
+}
+function confirmTitle(plan, canPush, installed) {  // installed: a Set of lower-case ids, or null if unknown
+  return new Promise(resolve => {
+    const dlg = $("titleDlg");
+    $("titlePush").hidden = !canPush;
+    $("titleSrc").textContent = `${plan.source} · ${gb(plan.size)}`;
+    $("titleName").value = plan.name;
+    const idNote = () => { const id = titleId($("titleName").value);
+      $("titleIdNote").textContent = !id ? "Needs some letters or digits"
+        : !installed ? `Shows in Steam as ${id}. Couldn't check whether it's installed already; if it is, this replaces it`
+        : installed.has(id.toLowerCase()) ? `Replaces the installed ${id}, and everything in its folder on the Frame`
+        : `Shows in Steam as ${id}`; };
+    $("titleName").oninput = idNote; idNote();
+    $("titleExe").innerHTML = plan.candidates.map(c =>
+      `<option value="${esc(c.path)}"${c.path === plan.target ? " selected" : ""}${c.blocked ? " disabled" : ""}>${esc(candLabel(c))}</option>`).join("");
+    const runtimes = () => {
+      const c = plan.candidates.find(x => x.path === $("titleExe").value) || {};
+      const list = c.runtimes || [];
+      $("titleRt").innerHTML = list.map(k => `<option value="${esc(k)}">${esc(plan.runtime_labels[k] || k)}</option>`).join("");
+      $("titleRt").disabled = list.length < 2;
+      if (c.path === plan.target) {
+        $("titleRt").value = plan.runtime;
+        $("titleNote").textContent = plan.note + " Device behaviour is inferred from Valve's devkit tools.";
+      } else $("titleNote").textContent = "Runtime follows the chosen program.";
+      $("titleWarn").textContent = c.skip ? "This looks like an installer or helper, not the game itself." : "";
+    };
+    $("titleExe").onchange = runtimes; runtimes();
+    $("titleMsg").textContent = "";
+    // Resolve on this dialog's own close event (it arrives a frame later), so a
+    // queued next title can't receive it. Escape closes with the choice left null.
+    let choice = null;
+    dlg.addEventListener("close", () => resolve(choice), { once: true });
+    const finish = v => { choice = v; dlg.close(); };
+    $("titleCancel").onclick = () => finish(null);
+    $("titlePush").onclick = () => finish("push");
+    $("titleForm").onsubmit = e => {
+      e.preventDefault();
+      if (!titleId($("titleName").value)) return ($("titleMsg").textContent = "Enter a name");
+      finish({ name: $("titleName").value.trim(), exe: $("titleExe").value, runtime: $("titleRt").value });
+    };
+    dlg.showModal();
+    $("titleName").focus();
+  });
+}
+async function installTitle(token, choice) {
+  const label = `Install ${titleId(choice.name)}`;
+  const start = await act(label, () => api("/api/titles", { action: "install", token, ...choice }));
+  if (!start) return;
+  const bar = $("prog").firstElementChild;
+  $("prog").style.display = "block"; bar.style.width = "0";
+  let stage = "";
+  try {
+    for (;;) {
+      await new Promise(ok => setTimeout(ok, 1000));
+      let j;
+      try { j = await api(`/api/titles/job?token=${encodeURIComponent(start.job)}`); }
+      catch (e) { log(`${label}: ${e.message}`, "e"); return; }
+      bar.style.width = (100 * (j.fraction || 0)) + "%";
+      if (j.stage && j.stage !== stage && !j.done) { stage = j.stage; log(`${stage}…`); $("lastLog").textContent = stage + "…"; }
+      if (j.done) {
+        if (j.error) { log(`${label} failed: ${j.error}`, "e"); toast(`${label} failed: ${j.error}`, true); }
+        else { log(j.message, "ok"); toast(j.message); }
+        break;
+      }
+    }
+  } finally { $("prog").style.display = "none"; loadTitles(); }
+}
+let titlesSeq = 0;  // a slower, older request mustn't overwrite a newer list
+async function loadTitles() {
+  const seq = ++titlesSeq;
+  let list, err;
+  try { list = (await api("/api/titles")).titles; } catch (e) { err = e; }
+  if (seq !== titlesSeq) return;
+  if (err) { $("titleList").innerHTML = `<div class="sub">${esc(err.message)}</div>`; return; }
+  $("titleCount").textContent = list.length ? `${list.length}` : "";
+  $("titleList").innerHTML = list.length ? list.map(t => `
+    <div class="item">
+      <div class="grow"><div class="t">${esc(t.id)}</div>
+        <div class="s" title="${esc(t.target)}">${esc(t.runtime_label)}${t.target ? " · " + esc(t.target) : ""}</div></div>
+      <button class="play small" data-title="launch" data-id="${esc(t.id)}" title="Launch in the headset">▶</button>
+      <button class="small danger" data-title="remove" data-id="${esc(t.id)}">Remove</button>
+    </div>`).join("") : `<div class="sub">None yet. Drop a game's .zip, folder or .exe above.</div>`;
+}
+$("titleList").onclick = async e => {
+  const b = e.target.closest("[data-title]"); if (!b) return;
+  const id = b.dataset.id;
+  if (b.dataset.title === "remove") {
+    if (!confirm(`Remove ${id} and its files from the Frame?`)) return;
+    await act(`Remove ${id}`, () => api("/api/titles", { action: "remove", id }), b);
+    loadTitles();
+  } else await act(`Launch ${id}`, () => api("/api/titles", { action: "launch", id }), b);
+};
+loadTitles();
 
 
 // ---- Steam games: install owned games, find and buy on the store ----
@@ -1631,6 +1821,110 @@ const spy = new IntersectionObserver(entries => {
   if (top) document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + top.target.id));
 }, { rootMargin: "-80px 0px -55% 0px" });
 ["view", "shots", "library", "getgames", "android", "transfer", "apps", "display", "power"].forEach(id => spy.observe($(id)));
+
+// ---- install links from websites (frame-control://install, docs/web-install.md) ----
+// The app passes each link here. The server checks it and reads the manifest;
+// nothing downloads until the user clicks Install in this dialog.
+const wi = { queue: [], open: false, gen: 0, plan: null, job: null, starting: false };
+function wiSize(n) {
+  if (n == null) return "Not given";
+  return n >= 1e9 ? gb(n) : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
+}
+function wiFacts(rows) { $("wiFacts").innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join(""); }
+function wiButtons(cancel, go) {
+  $("wiCancel").textContent = cancel[0]; $("wiCancel").disabled = !cancel[1];
+  $("wiGo").hidden = !go; $("wiGo").disabled = go !== "on";
+}
+async function wiNext() {
+  if (wi.open || !wi.queue.length) return;
+  const req = wi.queue.shift(), gen = ++wi.gen;
+  wi.open = true; wi.plan = null; wi.job = null;
+  let host = "";
+  try { host = new URL(req.target).hostname; } catch {}
+  wiFacts([["From", host], [req.kind === "manifest" ? "Manifest" : "File", req.target]]);
+  $("wiProg").hidden = true; $("wiMsg").textContent = "Checking the link…";
+  wiButtons(["Cancel", true], "off");
+  $("wiDlg").showModal();
+  log(`Install link from ${host}`);
+  try {
+    const p = await api("/api/webinstall/check", { [req.kind]: req.target });
+    if (gen !== wi.gen) return;
+    wi.plan = p;
+    const from = p.host === p.linkHost ? p.host : `${p.linkHost} (file on ${p.host})`;
+    wiFacts([["Title", p.name], ["From", from], ["File", p.file], ["Type", p.kindLabel], ["Size", wiSize(p.size)],
+             ["SHA-256", p.sha256 ? "Given; checked after downloading" : "Not given; the download can't be checked"]]);
+    $("wiMsg").textContent = "";
+    wiButtons(["Cancel", true], "on");
+    $("wiGo").focus();
+  } catch (e) {
+    if (gen !== wi.gen) return;
+    $("wiMsg").textContent = e.message;
+    wiButtons(["Close", true], null);
+    log(`Install link refused: ${e.message}`, "e");
+  }
+}
+async function wiPoll(gen) {
+  if (gen !== wi.gen || !wi.job) return;
+  let j;
+  try {
+    j = await api(`/api/webinstall/job?id=${encodeURIComponent(wi.job)}`);
+  } catch (e) {
+    $("wiMsg").textContent = e.message;
+    return setTimeout(() => wiPoll(gen), 1500);
+  }
+  if (gen !== wi.gen) return;
+  const bar = $("wiProg").firstElementChild;
+  $("wiProg").hidden = false;
+  if (j.phase === "download") {
+    bar.style.width = j.total ? (100 * j.done / j.total) + "%" : "0";
+    $("wiMsg").textContent = `Downloading ${wiSize(j.done)}` + (j.total ? ` of ${wiSize(j.total)}` : "");
+    wiButtons(["Stop download", true], "off");
+  } else if (j.phase === "install") {
+    bar.style.width = "100%";
+    $("wiMsg").textContent = j.detail || "Installing on the Frame…";
+    wiButtons(["Stop download", false], "off");
+  } else {
+    wi.job = null;
+    $("wiProg").hidden = true;
+    if (j.phase === "done") {
+      log(j.message, "ok"); toast(j.message);
+      $("wiDlg").close();
+      loadAndroid(); loadTitles(); refresh();
+    } else {
+      $("wiMsg").textContent = j.error;
+      log(`Install from link failed: ${j.error}`, "e"); toast(`Install failed: ${j.error}`, true);
+      wiButtons(["Close", true], null);
+    }
+    return;
+  }
+  setTimeout(() => wiPoll(gen), 500);
+}
+$("wiGo").onclick = async () => {
+  const p = wi.plan, gen = wi.gen;
+  if (!p) return;
+  wi.plan = null;  // one click, one install
+  wiButtons(["Cancel", false], "off");
+  $("wiMsg").textContent = "Starting…";
+  wi.starting = true;  // the dialog stays open until the job is known
+  try {
+    wi.job = (await api("/api/webinstall/start", { id: p.id })).job;
+    log(`Installing ${p.name} from ${p.host}…`);
+    wiPoll(gen);
+  } catch (e) {
+    $("wiMsg").textContent = e.message;
+    wiButtons(["Close", true], null);
+  } finally { wi.starting = false; }
+};
+$("wiCancel").onclick = async () => {
+  if (!wi.job) return $("wiDlg").close();
+  try { await api("/api/webinstall/cancel", { job: wi.job }); } catch (e) { $("wiMsg").textContent = e.message; }
+};
+// Escape doesn't close the dialog while an install runs; it keeps showing progress.
+$("wiDlg").addEventListener("cancel", e => { if (wi.job || wi.starting) e.preventDefault(); });
+$("wiDlg").addEventListener("close", () => { wi.gen++; wi.open = false; wi.plan = null; wi.job = null; setTimeout(wiNext); });
+if (window.frameApp && window.frameApp.onInstallLink) {
+  window.frameApp.onInstallLink(req => { if (wi.queue.length < 5) wi.queue.push(req); wiNext(); });
+}
 
 setView("headset");
 refresh().then(loadShots);  // after status, so app names resolve

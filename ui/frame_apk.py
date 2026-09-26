@@ -12,6 +12,13 @@ import zipfile
 ATTR = {0x01010001: 'label', 0x01010002: 'icon', 0x01010003: 'name',
         0x0101021b: 'versionCode', 0x0101021c: 'versionName', 0x0101020c: 'minSdkVersion'}
 T_REF, T_STRING, T_INT_DEC, T_INT_HEX = 0x01, 0x03, 0x10, 0x11
+# APKs can come from websites (install links), so nothing read from one may be
+# unbounded. zipfile stops at a member's declared size, so checking it is enough.
+MAX_MANIFEST = 16 * 1024**2
+MAX_ARSC = 128 * 1024**2      # real ones are a few MB; the largest apps' tens of MB
+MAX_ICON = 8 * 1024**2
+MAX_VALUES = 256              # resolved values per reference, across all its hops
+MAX_STEPS = 4096              # entries examined per reference, dead ends and cycles included
 
 
 class ApkError(Exception):
@@ -129,15 +136,23 @@ class Resources:
                 resid = (pid << 24) | (tid << 16) | index
                 self.entries.setdefault(resid, []).append((language, density, dtype, value))
 
-    def values(self, resid, depth=0):
-        """[(language, density, type, data)] with references followed."""
+    def values(self, resid, depth=0, seen=frozenset(), steps=None):
+        """[(language, density, type, data)] with references followed: never round a
+        cycle, at most MAX_VALUES results and MAX_STEPS entries examined in all."""
+        steps = steps if steps is not None else [MAX_STEPS]
         out = []
+        seen = seen | {resid}
         for lang, dens, dtype, value in self.entries.get(resid, []):
+            steps[0] -= 1
+            if steps[0] < 0 or len(out) >= MAX_VALUES:
+                break
             if dtype == T_REF and depth < 5:
-                out += [(lang or l2, dens or d2, t2, v2) for l2, d2, t2, v2 in self.values(value, depth + 1)]
+                if value not in seen:
+                    out += [(lang or l2, dens or d2, t2, v2)
+                            for l2, d2, t2, v2 in self.values(value, depth + 1, seen, steps)]
             else:
                 out.append((lang, dens, dtype, value))
-        return out
+        return out[:MAX_VALUES]
 
     def string(self, dtype, value):
         return self.strings[value] if dtype == T_STRING and value < len(self.strings) else None
@@ -171,6 +186,24 @@ def _icons(attr, res):
     return [s for _, s in sorted(vals, key=lambda x: -x[0]) if s]
 
 
+def _read(z, name, limit):
+    """A member's bytes, inflating at most limit + 1 of them whatever its header claims
+    (ZipFile.read inflates everything first, then trims to the declared size)."""
+    info = z.getinfo(name)
+    # Android only reads stored and deflated entries, and only those bound what
+    # a read inflates (Python 3.9's bzip2 and lzma readers don't).
+    if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+        raise ApkError(f'{name} in the APK uses a compression Android does not')
+    size = info.file_size
+    if size > limit:
+        raise ApkError(f'{name} in the APK is {size / 1024**2:.0f} MB, more than a real one ({limit // 1024**2} MB)')
+    with z.open(name) as f:
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise ApkError(f'{name} in the APK is larger than a real one ({limit // 1024**2} MB)')
+    return data
+
+
 def apk_info(path):
     """Package, label, version, min_sdk, abis and the best PNG icon inside the APK."""
     try:
@@ -182,8 +215,8 @@ def apk_info(path):
         if 'AndroidManifest.xml' not in names:
             raise ApkError('not an APK: no AndroidManifest.xml')
         try:
-            elements = manifest_elements(z.read('AndroidManifest.xml'))
-            res = Resources(z.read('resources.arsc') if 'resources.arsc' in names else b'')
+            elements = manifest_elements(_read(z, 'AndroidManifest.xml', MAX_MANIFEST))
+            res = Resources(_read(z, 'resources.arsc', MAX_ARSC) if 'resources.arsc' in names else b'')
         except (struct.error, IndexError, zipfile.BadZipFile) as e:
             raise ApkError(f'could not read the APK manifest: {e}')
         tags = {}
@@ -212,11 +245,11 @@ def apk_info(path):
 def _icon_png(z, names, icons):
     for icon in icons:
         if icon.endswith('.png') and icon in names:
-            return z.read(icon)
+            return _read(z, icon, MAX_ICON)
     # Adaptive icons are XML; fall back to the largest launcher PNG.
     pngs = sorted((n for n in names if n.endswith('.png') and 'ic_launcher' in n and 'foreground' not in n),
                   key=lambda n: z.getinfo(n).file_size)
-    return z.read(pngs[-1]) if pngs else None
+    return _read(z, pngs[-1], MAX_ICON) if pngs else None
 
 
 if __name__ == '__main__':

@@ -21,6 +21,14 @@
   "build": {
     "appId": "com.saphid.frame-control",
     "productName": "Frame Control",
+    "protocols": [
+      {
+        "name": "Frame Control install link",
+        "schemes": [
+          "frame-control"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -28,6 +36,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "install-link.js",
       "package.json",
       "build/icon.png"
     ],
@@ -53,6 +62,14 @@
         "filter": [
           "*.sh",
           "*.py"
+        ]
+      },
+      {
+        "from": "../frame/devkit-utils",
+        "to": "frame/devkit-utils",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
         ]
       },
       {
