@@ -8,8 +8,9 @@ Lepton Development, which wipes its apps on exit. See docs/apks.md.
 
 Python stdlib only. CLI: python3 ui/frame_android.py {install APK|list|launch PKG|stop PKG|remove PKG|probe PKG}
 """
-import glob, json, os, re, shlex, shutil, subprocess, sys, threading, time, zipfile, zlib
+import json, os, re, shlex, shutil, subprocess, sys, threading, time, zlib
 
+import frame_apk
 import frame_host
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,45 +57,12 @@ def game_id(shortcut_appid):
     return (int(shortcut_appid) << 32) | 0x02000000
 
 
-def aapt2():
-    exe = 'aapt2.exe' if frame_host.WINDOWS else 'aapt2'
-    found = sorted(f for d in frame_host.android_sdk_dirs() for f in glob.glob(os.path.join(d, 'build-tools', '*', exe)))
-    return found[-1] if found else shutil.which('aapt2')
-
-
 def apk_info(path):
     """Package, label, version, native ABIs and the best PNG icon inside the APK."""
-    tool = aapt2()
-    if not tool:
-        raise FrameError(f"aapt2 not found: {frame_host.install_hint('aapt2')}")
-    out = subprocess.run([tool, 'dump', 'badging', path], capture_output=True, stdin=subprocess.DEVNULL, text=True).stdout
-    m = re.search(r"package: name='([^']+)'.*?versionName='([^']*)'", out)
-    if not m:
-        raise FrameError(f'not a readable APK: {os.path.basename(path)}')
-    label = re.search(r"application-label(?:-en(?:-US)?)?:'([^']*)'", out) or \
-        re.search(r"application: label='([^']*)'", out)
-    icons = re.findall(r"application-icon-(\d+):'([^']+)'", out)
-    abis = re.search(r"native-code: (.*)", out)
-    sdk = re.search(r"(?:minSdkVersion|sdkVersion):'(\d+)'", out)
-    info = {'package': m[1], 'version': m[2], 'label': (label[1] if label else '') or m[1],
-            'abis': re.findall(r"'([^']+)'", abis[1]) if abis else [],
-            'min_sdk': int(sdk[1]) if sdk else None, 'icon_png': None}
     try:
-        z = zipfile.ZipFile(path)
-    except (zipfile.BadZipFile, OSError) as e:
-        raise FrameError(f'not a readable APK: {e}')
-    with z:
-        names = set(z.namelist())
-        for _, icon in sorted(icons, key=lambda d: -int(d[0])):
-            if icon.endswith('.png') and icon in names:
-                info['icon_png'] = z.read(icon)
-                break
-        else:  # adaptive icons are XML; fall back to the largest launcher PNG
-            pngs = sorted((n for n in names if n.endswith('.png') and 'ic_launcher' in n and 'foreground' not in n),
-                          key=lambda n: z.getinfo(n).file_size)
-            if pngs:
-                info['icon_png'] = z.read(pngs[-1])
-    return info
+        return frame_apk.apk_info(path)
+    except frame_apk.ApkError as e:
+        raise FrameError(f'{os.path.basename(path)}: {e}')
 
 
 def check_installable(info):

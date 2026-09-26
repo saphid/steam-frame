@@ -92,14 +92,14 @@ already ships. [How each feature works](docs/frame-control.md).
 
 | | Download | Needs |
 |---|---|---|
-| **macOS** (Apple Silicon) | [Frame-Control-mac-arm64.dmg](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-mac-arm64.dmg) | Python 3 (`xcode-select --install`) |
-| **Windows** 10 / 11 (x64) | [Frame-Control-Setup-x64.exe](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-Setup-x64.exe) · [portable .zip](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-win-x64.zip) | Nothing extra: Python is bundled, and SSH is built into Windows |
-| **Linux** (x64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-x86_64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-amd64.deb) | `python3` and `ssh` (most desktops have both) |
-| **Linux** (arm64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.deb) | same |
+| **macOS** (Apple Silicon) | [Frame-Control-mac-arm64.dmg](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-mac-arm64.dmg) | Nothing extra |
+| **Windows** 10 / 11 (x64) | [Frame-Control-Setup-x64.exe](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-Setup-x64.exe) · [portable .zip](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-win-x64.zip) | Nothing extra |
+| **Linux** (x64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-x86_64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-amd64.deb) | `ssh` (most desktops have it) |
+| **Linux** (arm64) | [AppImage](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.AppImage) · [.deb](https://github.com/saphid/steam-frame/releases/latest/download/Frame-Control-linux-arm64.deb) | `ssh`, and `adb` for Android apps (`sudo apt install adb`) |
 
-Optional: `adb` for Android apps
-([macOS](https://formulae.brew.sh/formula/android-platform-tools) `brew install android-platform-tools` ·
-Windows `winget install Google.PlatformTools` · Linux `sudo apt install adb`).
+The app brings its own Python and `adb`; SSH is built into macOS and Windows.
+Google doesn't publish `adb` for arm64 Linux, so that build uses your
+distribution's. If you already have `adb`, the app uses yours.
 
 <details>
 <summary><b>macOS: the app isn't notarized</b></summary>
@@ -132,8 +132,7 @@ chmod +x Frame-Control-linux-*.AppImage && ./Frame-Control-linux-*.AppImage
 ```
 
 If it complains about FUSE, install `libfuse2` (Ubuntu 24.04+: `libfuse2t64`),
-or run it with `--appimage-extract-and-run`. Sending the clipboard needs
-`wl-clipboard` (Wayland) or `xclip` (X11).
+or run it with `--appimage-extract-and-run`.
 </details>
 
 ## Set up the headset

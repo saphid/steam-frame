@@ -18,7 +18,8 @@ python3 ui/frame_android.py list|launch|stop|remove|probe <package>
 Each APK becomes its own app, the way T3 Code is set up (see the instance
 section below), instead of going into Lepton Development:
 
-1. `aapt2` reads the package, label, version, ABIs and icon. APKs that need
+1. `ui/frame_apk.py` reads the package, label, version, ABIs and icon
+   (a stdlib parser of the binary manifest and resource table, so no Android SDK). APKs that need
    API > 30 or have no `arm64-v8a` build are refused.
 2. The APK, `frame/android/lepton-app.sh` (as `launch.sh`), `instance.id`,
    `meta.json`, the icon and the `lepton-show-flatscreen` marker go to

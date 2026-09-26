@@ -1069,7 +1069,14 @@ $("clipSend").onclick = () => {
   if (!text) return toast("Nothing to send", true);
   act("Send text to clipboard", () => api("/api/clipboard", { text }), $("clipSend"));
 };
-$("clipMac").onclick = () => act($("clipMac").textContent, () => api("/api/clipboard", { fromComputer: true }), $("clipMac"));
+// In the app, Electron reads the clipboard; in a browser, the server does.
+async function sendComputerClipboard() {
+  if (!window.frameApp) return api("/api/clipboard", { fromComputer: true });
+  const text = await window.frameApp.readClipboard();
+  if (!text) throw new Error("The clipboard is empty (or holds something other than text)");
+  return api("/api/clipboard", { text });
+}
+$("clipMac").onclick = () => act($("clipMac").textContent, sendComputerClipboard, $("clipMac"));
 
 // ---- file drop ----
 const drop = $("drop");

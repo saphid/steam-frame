@@ -8,6 +8,7 @@ CLI (used by the Electron app, so terminal handling lives in one place):
 import os
 import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -74,15 +75,12 @@ def install_hint(tool):
         "adb": {"mac": "brew install android-platform-tools",
                 "win": "winget install Google.PlatformTools",
                 "linux": "install your distribution's adb package (e.g. sudo apt install adb)"},
-        "aapt2": {"mac": 'brew install --cask android-commandlinetools, then sdkmanager "build-tools;36.0.0"',
-                  "win": 'install Android Studio\'s command-line tools, then sdkmanager "build-tools;36.0.0"',
-                  "linux": 'install Android\'s command-line tools, then sdkmanager "build-tools;36.0.0"'},
     }
     return hints[tool]["mac" if MAC else "win" if WINDOWS else "linux"]
 
 
 def android_sdk_dirs():
-    """Where the Android SDK usually lives, for adb and aapt2."""
+    """Where the Android SDK usually lives, for adb."""
     dirs = [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT")]
     if MAC:
         dirs += ["~/Library/Android/sdk", "/opt/homebrew/share/android-commandlinetools",
@@ -99,11 +97,37 @@ def adb():
     extra = [os.path.join(d, "platform-tools", exe) for d in android_sdk_dirs()]
     if MAC:
         extra += ["/opt/homebrew/bin/adb", str(Path.home() / ".homebrew/bin/adb"), "/usr/local/bin/adb"]
+    # The app bundles adb as a last resort: an adb you already use goes first, so
+    # two different adb versions don't keep restarting each other's server.
+    tools = os.environ.get("FRAME_CONTROL_TOOLS")
+    if tools:
+        extra.append(os.path.join(tools, exe))
     env = os.environ.get("ADB")
     found = (env if env and os.access(env, os.X_OK) else None) or which("adb", *extra)
     if not found:
         raise HostError(f"adb isn't installed on this computer: {install_hint('adb')}")
     return found
+
+
+def trust_bundled_cas():
+    """Trust the app's CA bundle for HTTPS as well as the system's certificates.
+
+    Python on Windows only sees the root certificates already in the Windows
+    store, and a fresh install fetches those lazily, so Steam and F-Droid can
+    fail with CERTIFICATE_VERIFY_FAILED. The app bundles curl's copy of Mozilla's
+    CA list (app/build/fetch-deps.js); outside the app this does nothing. Call it
+    before the first urlopen: urllib keeps the HTTPS context it builds then.
+    """
+    tools = os.environ.get("FRAME_CONTROL_TOOLS")
+    cafile = os.path.join(tools, "cacert.pem") if tools else None
+    if not cafile or not os.path.isfile(cafile):
+        return
+
+    def context(*args, **kwargs):
+        ctx = ssl.create_default_context(*args, **kwargs)
+        ctx.load_verify_locations(cafile)
+        return ctx
+    ssl._create_default_https_context = context  # urllib's default for HTTPS
 
 
 def open_path(path):
