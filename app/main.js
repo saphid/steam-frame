@@ -234,7 +234,10 @@ async function firstRunCheck() {
 }
 
 ipcMain.handle("clipboard:read", (e) => {
-  if (!win || e.sender !== win.webContents || !url || new URL(e.senderFrame.url).origin !== new URL(url).origin) return "";
+  if (!win || e.sender !== win.webContents || !url) return "";
+  try {
+    if (new URL(e.senderFrame.url).origin !== new URL(url).origin) return "";
+  } catch { return ""; }
   return clipboard.readText();
 });
 

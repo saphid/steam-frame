@@ -39,22 +39,23 @@ const PRUNE = [
   "include", "share", "Scripts", "libs", "tcl", "lib/pkgconfig", "lib/itcl4", "lib/tcl8", "lib/tcl8.6",
   "lib/tk8.6", "lib/thread2.8", "bin/idle3", "bin/idle3.12", "bin/pip", "bin/pip3", "bin/pip3.12",
   "bin/pydoc3", "bin/pydoc3.12", "bin/2to3", "bin/2to3-3.12", "bin/python3-config", "bin/python3.12-config",
-  ...["test", "idlelib", "tkinter", "turtledemo", "ensurepip", "lib2to3", "site-packages/pip"]
+  ...["test", "idlelib", "tkinter", "turtledemo", "ensurepip", "lib2to3", "site-packages/pip", "pydoc_data", "venv"]
     .flatMap((d) => [`lib/python3.12/${d}`, `Lib/${d}`]),
 ];
 
-function get(url) {
+function get(url, redirects = 5) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    https.get(url, { timeout: 60000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return resolve(get(res.headers.location));
+        if (!redirects) return reject(new Error(`${url}: too many redirects`));
+        return resolve(get(new URL(res.headers.location, url).href, redirects - 1));
       }
       if (res.statusCode !== 200) return reject(new Error(`${url}: HTTP ${res.statusCode}`));
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve(Buffer.concat(chunks)));
-    }).on("error", reject);
+    }).on("timeout", function () { this.destroy(new Error(`${url}: timed out`)); }).on("error", reject);
   });
 }
 
@@ -66,7 +67,7 @@ async function download(url, sha256, file) {
 }
 
 // Windows' own bsdtar: Git's GNU tar, often first on PATH, reads C:\ as a remote host.
-const TAR = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
+const TAR = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
 
 function extract(file, dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -97,6 +98,12 @@ async function fetch(os, arch) {
   await download(PY_URL(triple), pySha, tgz);
   extract(tgz, out);  // unpacks to python/
   for (const p of PRUNE) fs.rmSync(path.join(out, "python", p), { recursive: true, force: true });
+  const stdlib = path.join(out, "python", "lib", "python3.12");  // macOS and Linux: drop the static libpython
+  if (fs.existsSync(stdlib)) {
+    for (const d of fs.readdirSync(stdlib)) {
+      if (d.startsWith("config-3.12")) fs.rmSync(path.join(stdlib, d), { recursive: true, force: true });
+    }
+  }
 
   const tools = path.join(out, "tools");
   fs.mkdirSync(tools);
