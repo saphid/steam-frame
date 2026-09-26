@@ -10,6 +10,7 @@
 # Usage:
 #   scripts/chromium-xr.sh install [TARBALL]  # default: scp from $BUILD_HOST
 #   scripts/chromium-xr.sh launch [URL]       # opens as its own panel in the headset
+#   scripts/chromium-xr.sh steam              # adds "Chromium XR" to the Steam library
 #   scripts/chromium-xr.sh check              # isSessionSupported via DevTools
 set -euo pipefail
 
@@ -17,7 +18,16 @@ FRAME_ALIAS=${FRAME_ALIAS:-frame}
 BUILD_HOST=${BUILD_HOST:-}
 BUILD_TARBALL=${BUILD_TARBALL:-chromium-xr/chromium-xr-arm64.tar.xz}
 DEVTOOLS_PORT=${DEVTOOLS_PORT:-9223}
+STEAM_NAME=${STEAM_NAME:-Chromium XR}
 here=${0:A:h}
+wrapper='~/Applications/ChromiumXR/launch.sh'
+
+# frame/chromium-xr/launch.sh holds Chrome's flags; both launch paths run it.
+push_wrapper() {
+  # Write then rename, so a dropped connection can't leave a torn script.
+  ssh "$FRAME_ALIAS" 'mkdir -p ~/Applications/ChromiumXR && cd ~/Applications/ChromiumXR && cat > launch.sh.new && chmod +x launch.sh.new && mv launch.sh.new launch.sh' \
+    < "$here/../frame/chromium-xr/launch.sh"
+}
 
 case "${1:-}" in
   install)
@@ -36,22 +46,43 @@ case "${1:-}" in
     ;;
   launch)
     # Its own VR panel on gamescope's X display, so the Plasma desktop doesn't
-    # need to be open. The app starts in $HOME, so the profile path is relative.
-    # Without --no-first-run and --password-store=basic, startup can stop at a
-    # first-run or keyring prompt before DevTools comes up.
-    # --disable-seccomp-filter-sandbox: under the XR seccomp policy, SteamVR's
-    # client reads /proc/self/status through the file broker, gets the
-    # broker's pid, and SteamVR binds the app to the wrong process, so
-    # xrCreateInstance fails. The namespace sandbox stays on, but seccomp is
-    # off for every process, so keep this profile for VR sites.
-    exec "$here/panel-on-frame.sh" --name chromium-xr -- '~/chromium-xr/chrome' \
-      --user-data-dir=.config/chromium-xr \
-      --enable-features=OpenXR \
-      --ozone-platform=x11 \
-      --no-first-run --no-default-browser-check --password-store=basic \
-      --disable-seccomp-filter-sandbox \
+    # need to be open. DevTools is only on for this path (for `check`).
+    push_wrapper
+    exec "$here/panel-on-frame.sh" --name chromium-xr -- "$wrapper" \
       --remote-debugging-port="$DEVTOOLS_PORT" \
       "${2:-https://immersive-web.github.io/webxr-samples/}"
+    ;;
+  steam)
+    # A non-Steam shortcut, added through the Steam client's DevTools port
+    # without restarting Steam (see docs/apks.md). Launching it from the
+    # library gives Chromium its own panel like any game. Safe to rerun: it
+    # refreshes the wrapper and only adds the shortcut if it's missing.
+    ssh "$FRAME_ALIAS" 'test -x ~/chromium-xr/chrome' ||
+      { print -u2 "No build in ~/chromium-xr on the Frame: run 'chromium-xr.sh install' first"; exit 1; }
+    push_wrapper
+    # The app id is kept next to the wrapper, so renaming the shortcut in the
+    # library doesn't make a rerun add a second one.
+    shortcuts=$here/../frame/android/steam_shortcuts.py
+    home=$(ssh "$FRAME_ALIAS" 'printf %s "$HOME"')
+    saved=$(ssh "$FRAME_ALIAS" 'cat ~/Applications/ChromiumXR/shortcut-appid 2>/dev/null || true')
+    existing=$(ssh "$FRAME_ALIAS" python3 - list < "$shortcuts" |
+      python3 -c 'import json,sys
+apps = json.load(sys.stdin)
+ids = [a["appid"] for a in apps if str(a["appid"]) == sys.argv[2]] or [a["appid"] for a in apps if a["name"] == sys.argv[1]]
+print(ids[0] if ids else "")' "$STEAM_NAME" "$saved")
+    if [[ -n "$existing" ]]; then
+      print -r -- "The shortcut is already in the Steam library (app id $existing)"
+    else
+      icon=''
+      for dir in /var/lib/flatpak '~/.local/share/flatpak'; do
+        candidate=$dir/exports/share/icons/hicolor/256x256/apps/org.chromium.Chromium.png
+        if ssh "$FRAME_ALIAS" "test -f $candidate"; then icon=${candidate/#\~/$home}; break; fi
+      done
+      existing=$(ssh "$FRAME_ALIAS" python3 - add ${(q)STEAM_NAME} ${(q)home}/Applications/ChromiumXR/launch.sh ${(q)home} ${(q)icon} < "$shortcuts")
+      [[ "$existing" == <-> ]] || { print -u2 -r -- "Steam didn't return a shortcut app id: $existing"; exit 1; }
+      print -r -- "Added $STEAM_NAME to the Steam library (shortcut app id $existing)"
+    fi
+    ssh "$FRAME_ALIAS" "printf '%s\n' $existing > ~/Applications/ChromiumXR/shortcut-appid"
     ;;
   check)
     # DevTools listens on the Frame's loopback only; evaluate there.
@@ -105,5 +136,5 @@ while reply is None:
 print("immersive-vr supported:", reply["result"]["result"].get("value"))
 EOF
     ;;
-  *) sed -n '2,13p' "$0"; exit 2 ;;
+  *) sed -n '2,14p' "$0"; exit 2 ;;
 esac
