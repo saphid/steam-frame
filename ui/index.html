@@ -1169,7 +1169,7 @@ async function sendFiles(files, dirs = new Set()) {
 }
 
 // ---- sideloaded titles (a Linux or Windows build as a Steam Devkit Game) ----
-const RESERVED_IDS = ["steam", "steamdeckard", "steamvr", "steamvrdeckard"];
+const RESERVED_IDS = ["steam", "steamdeckard", "steamvr", "steamvrdeckard", "devkit-steam"];
 function titleId(name) {  // mirrors frame_titles.title_id: the name Steam shows
   const trim = x => x.replace(/^[_-]+|[_-]+$/g, "");
   let s = trim(trim(String(name).trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_")).slice(0, 64));
@@ -1216,7 +1216,9 @@ function confirmTitle(plan, canPush) {
     $("titleSrc").textContent = `${plan.source} · ${gb(plan.size)}`;
     $("titleName").value = plan.name;
     const idNote = () => { const id = titleId($("titleName").value);
-      $("titleIdNote").textContent = id ? `Shows in Steam as ${id}` : "Needs some letters or digits"; };
+      $("titleIdNote").textContent = !id ? "Needs some letters or digits"
+        : installedTitles.has(id.toLowerCase()) ? `Replaces the installed ${id}, and everything in its folder on the Frame`
+        : `Shows in Steam as ${id}`; };
     $("titleName").oninput = idNote; idNote();
     $("titleExe").innerHTML = plan.candidates.map(c =>
       `<option value="${esc(c.path)}"${c.path === plan.target ? " selected" : ""}${c.blocked ? " disabled" : ""}>${esc(candLabel(c))}</option>`).join("");
@@ -1272,10 +1274,12 @@ async function installTitle(token, choice) {
     }
   } finally { $("prog").style.display = "none"; loadTitles(); }
 }
+let installedTitles = new Set();  // lower-case ids, so the install dialog can warn before replacing one
 async function loadTitles() {
   let list;
   try { list = (await api("/api/titles")).titles; }
   catch (e) { $("titleList").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  installedTitles = new Set(list.map(t => String(t.id).toLowerCase()));
   $("titleCount").textContent = list.length ? `${list.length}` : "";
   $("titleList").innerHTML = list.length ? list.map(t => `
     <div class="item">

@@ -32,7 +32,9 @@ STAMP = '.frame-control-stamp'
 PY = 'python3 ~/' + UTILS + '/'
 
 # Valve's reserved sideload names: uploading one of these replaces the Steam client itself.
-RESERVED_IDS = ('steam', 'steamdeckard', 'steamvr', 'steamvrdeckard')
+# devkit-steam is the trampoline file that switches SteamOS to a sideloaded client
+# (select_steam.sh); a folder there breaks Valve's devkit tools.
+RESERVED_IDS = ('steam', 'steamdeckard', 'steamvr', 'steamvrdeckard', 'devkit-steam')
 ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
 DIR_RE = re.compile(r'^/[A-Za-z0-9_./-]+$')
 
@@ -422,6 +424,7 @@ def inspect(path, name=None):
     work = None
     try:
         if os.path.isdir(path):
+            base = path
             root = _unwrap(path)
             if _has_links(root):
                 # scp -r follows links, so a link out of the folder could upload
@@ -431,20 +434,24 @@ def inspect(path, name=None):
         elif path.lower().endswith('.zip'):
             work = tempfile.mkdtemp(prefix=f'{TMP_PREFIX}{os.getpid()}-')
             extract_zip(path, work)
+            base = work
             root = _unwrap(work)
         elif classify(path):
             # A single executable is uploaded on its own; don't copy a whole Downloads folder.
             work = tempfile.mkdtemp(prefix=f'{TMP_PREFIX}{os.getpid()}-')
             shutil.copy2(path, os.path.join(work, os.path.basename(path)))
-            root = work
+            base = root = work
         else:
             raise FrameError(f'{os.path.basename(path)} is not a .zip, a folder or a program')
         title = name or display_name(os.path.basename(path.rstrip('/\\')))
         found = candidates(root, title)
         if not found:
             raise FrameError(f'no Linux or Windows program found in {os.path.basename(path)}')
+        # An exe path may be given as it is in the archive, above the folder _unwrap stepped into.
+        unwrapped = os.path.relpath(root, os.path.realpath(base)).replace(os.sep, '/')
         plan = {'source': os.path.basename(path.rstrip('/\\')), 'name': title, 'id': title_id(title),
                 'root': root, 'work': work, 'candidates': found,
+                'unwrapped': '' if unwrapped == '.' else unwrapped,
                 'size': _tree_size(root), 'warnings': []}
         _choose(plan, found[0]['path'])
         return plan
@@ -466,6 +473,10 @@ def _tree_size(root):
 
 def _choose(plan, rel, runtime=None):
     """Set plan's launch target (a path relative to root) and its runtime."""
+    rel = rel.replace('\\', '/')
+    prefix = plan.get('unwrapped') and plan['unwrapped'] + '/'
+    if prefix and rel.startswith(prefix):
+        rel = rel[len(prefix):]
     target = next((c for c in plan['candidates'] if c['path'] == rel), None)
     if target is None:
         full = os.path.realpath(os.path.join(plan['root'], *rel.replace('\\', '/').split('/')))

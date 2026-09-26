@@ -142,6 +142,17 @@ class Targets(unittest.TestCase):
         with self.assertRaises(FrameError):
             frame_titles._choose(p, '../outside.exe')
 
+    def test_exe_path_from_above_the_unwrapped_folder(self):
+        # A manifest names the program as it is in the archive: Game/B.exe, not B.exe.
+        p = self.plan({'Game/A.exe': pe(0x8664), 'Game/B.exe': pe(0x8664)}, 'Game')
+        self.assertEqual(p['unwrapped'], 'Game')
+        frame_titles._choose(p, 'Game/B.exe')
+        self.assertEqual(p['target'], 'B.exe')
+        frame_titles._choose(p, 'Game\\A.exe')
+        self.assertEqual(p['target'], 'A.exe')
+        with self.assertRaises(FrameError):
+            frame_titles._choose(p, 'Game/../../outside.exe')
+
 
 class Zips(unittest.TestCase):
     def setUp(self):
@@ -317,6 +328,8 @@ class Names(unittest.TestCase):
     def test_title_id(self):
         self.assertEqual(frame_titles.title_id('Hollow Knight: Silksong!'), 'Hollow_Knight_Silksong')
         self.assertEqual(frame_titles.title_id('steam'), 'steam-game')     # Valve's reserved sideload names
+        self.assertEqual(frame_titles.title_id('Devkit Steam'), 'Devkit_Steam')
+        self.assertEqual(frame_titles.title_id('devkit-steam'), 'devkit-steam-game')  # the trampoline file
         self.assertEqual(frame_titles.title_id('--rm -rf /'), 'rm_-rf')
         self.assertEqual(len(frame_titles.title_id('x' * 200)), 64)
         with self.assertRaises(FrameError):

@@ -134,6 +134,26 @@ class ApkInfo(unittest.TestCase):
             with self.assertRaises(frame_apk.ApkError):
                 self.read(data)
 
+    def test_refuses_oversized_members(self):
+        # An APK from a website mustn't make the server inflate gigabytes.
+        data = apk({'AndroidManifest.xml': manifest('com.example.big', 0x7f010000, 0x7f010001, 21)})
+        limit, frame_apk.MAX_MANIFEST = frame_apk.MAX_MANIFEST, 16
+        try:
+            with self.assertRaises(frame_apk.ApkError):
+                self.read(data)
+        finally:
+            frame_apk.MAX_MANIFEST = limit
+
+    def test_reference_cycles_and_fan_out_are_bounded(self):
+        res = frame_apk.Resources(b'')
+        ref = frame_apk.T_REF
+        res.entries = {1: [('', 0, ref, 1)] * 5}  # five references to itself
+        self.assertEqual(res.values(1), [])
+        # Five references at each of five hops: 3125 leaves without a budget.
+        res.entries = {i: [('', 0, ref, i + 1)] * 5 for i in range(1, 6)}
+        res.entries[6] = [('', 0, frame_apk.T_STRING, 0)]
+        self.assertEqual(len(res.values(1)), frame_apk.MAX_VALUES)
+
 
 if __name__ == '__main__':
     unittest.main()
