@@ -1200,8 +1200,10 @@ async function sideloadOne(file, path, isDir = false) {
       await act(`Copy ${file.name} to ~/Downloads`, () => upload(file, "push"));
     return;
   }
-  await loadTitles();  // fresh, so the dialog can say whether this replaces an installed title
-  const choice = await confirmTitle(r.plan, canPush);
+  // Its own fresh list, so the dialog can say whether this replaces an installed title.
+  let installed = null;
+  try { installed = new Set((await api("/api/titles")).titles.map(t => String(t.id).toLowerCase())); } catch {}
+  const choice = await confirmTitle(r.plan, canPush, installed);
   if (choice === "push") {
     api("/api/titles", { action: "discard", token: r.token }).catch(() => {});
     await act(`Copy ${file.name} to ~/Downloads`, () => upload(file, "push"));
@@ -1210,7 +1212,7 @@ async function sideloadOne(file, path, isDir = false) {
   if (!choice) { api("/api/titles", { action: "discard", token: r.token }).catch(() => {}); return; }
   await installTitle(r.token, choice);
 }
-function confirmTitle(plan, canPush) {
+function confirmTitle(plan, canPush, installed) {  // installed: a Set of lower-case ids, or null if unknown
   return new Promise(resolve => {
     const dlg = $("titleDlg");
     $("titlePush").hidden = !canPush;
@@ -1218,8 +1220,8 @@ function confirmTitle(plan, canPush) {
     $("titleName").value = plan.name;
     const idNote = () => { const id = titleId($("titleName").value);
       $("titleIdNote").textContent = !id ? "Needs some letters or digits"
-        : !installedTitles ? `Shows in Steam as ${id}. Couldn't check whether it's installed already; if it is, this replaces it`
-        : installedTitles.has(id.toLowerCase()) ? `Replaces the installed ${id}, and everything in its folder on the Frame`
+        : !installed ? `Shows in Steam as ${id}. Couldn't check whether it's installed already; if it is, this replaces it`
+        : installed.has(id.toLowerCase()) ? `Replaces the installed ${id}, and everything in its folder on the Frame`
         : `Shows in Steam as ${id}`; };
     $("titleName").oninput = idNote; idNote();
     $("titleExe").innerHTML = plan.candidates.map(c =>
@@ -1276,15 +1278,13 @@ async function installTitle(token, choice) {
     }
   } finally { $("prog").style.display = "none"; loadTitles(); }
 }
-let installedTitles = null;  // lower-case ids, so the install dialog can warn before replacing one; null: unknown
-let titlesSeq = 0;           // a slower, older request mustn't overwrite a newer answer
+let titlesSeq = 0;  // a slower, older request mustn't overwrite a newer list
 async function loadTitles() {
   const seq = ++titlesSeq;
   let list, err;
   try { list = (await api("/api/titles")).titles; } catch (e) { err = e; }
   if (seq !== titlesSeq) return;
-  if (err) { installedTitles = null; $("titleList").innerHTML = `<div class="sub">${esc(err.message)}</div>`; return; }
-  installedTitles = new Set(list.map(t => String(t.id).toLowerCase()));
+  if (err) { $("titleList").innerHTML = `<div class="sub">${esc(err.message)}</div>`; return; }
   $("titleCount").textContent = list.length ? `${list.length}` : "";
   $("titleList").innerHTML = list.length ? list.map(t => `
     <div class="item">
