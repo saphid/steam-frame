@@ -189,7 +189,12 @@ def _icons(attr, res):
 def _read(z, name, limit):
     """A member's bytes, inflating at most limit + 1 of them whatever its header claims
     (ZipFile.read inflates everything first, then trims to the declared size)."""
-    size = z.getinfo(name).file_size
+    info = z.getinfo(name)
+    # Android only reads stored and deflated entries, and only those bound what
+    # a read inflates (Python 3.9's bzip2 and lzma readers don't).
+    if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+        raise ApkError(f'{name} in the APK uses a compression Android does not')
+    size = info.file_size
     if size > limit:
         raise ApkError(f'{name} in the APK is {size / 1024**2:.0f} MB, more than a real one ({limit // 1024**2} MB)')
     with z.open(name) as f:

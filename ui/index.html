@@ -1277,10 +1277,13 @@ async function installTitle(token, choice) {
   } finally { $("prog").style.display = "none"; loadTitles(); }
 }
 let installedTitles = null;  // lower-case ids, so the install dialog can warn before replacing one; null: unknown
+let titlesSeq = 0;           // a slower, older request mustn't overwrite a newer answer
 async function loadTitles() {
-  let list;
-  try { list = (await api("/api/titles")).titles; }
-  catch (e) { installedTitles = null; $("titleList").innerHTML = `<div class="sub">${esc(e.message)}</div>`; return; }
+  const seq = ++titlesSeq;
+  let list, err;
+  try { list = (await api("/api/titles")).titles; } catch (e) { err = e; }
+  if (seq !== titlesSeq) return;
+  if (err) { installedTitles = null; $("titleList").innerHTML = `<div class="sub">${esc(err.message)}</div>`; return; }
   installedTitles = new Set(list.map(t => String(t.id).toLowerCase()));
   $("titleCount").textContent = list.length ? `${list.length}` : "";
   $("titleList").innerHTML = list.length ? list.map(t => `

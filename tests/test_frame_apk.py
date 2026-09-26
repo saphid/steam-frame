@@ -165,6 +165,14 @@ class ApkInfo(unittest.TestCase):
             frame_apk.MAX_MANIFEST = limit
         self.assertLess(peak, 8 * 1024**2)
 
+    def test_refuses_compression_android_cant_read(self):
+        for method in (zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA):
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, 'w', method) as z:
+                z.writestr('AndroidManifest.xml', manifest('com.example.odd', 0x7f010000, 0x7f010001, 21))
+            with self.assertRaisesRegex(frame_apk.ApkError, 'compression'):
+                self.read(buf.getvalue())
+
     def test_reference_cycles_and_fan_out_are_bounded(self):
         res = frame_apk.Resources(b'')
         ref = frame_apk.T_REF
