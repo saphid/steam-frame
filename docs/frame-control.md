@@ -124,7 +124,9 @@ The arm64 build also needs your distribution's `adb` for Android apps, because
 Google publishes no arm64 Linux platform-tools. Set Up Connection runs
 `ui/frame_connect.py` in your terminal emulator (GNOME Terminal, Konsole, xterm
 and others). The log is at
-`~/.config/Frame Control/logs/server.log`.
+`~/.config/Frame Control/logs/server.log`. Running `ui/server.py` in a browser
+instead of the app, sending the clipboard needs `wl-clipboard` (Wayland) or
+`xclip` (X11).
 
 ## Building
 

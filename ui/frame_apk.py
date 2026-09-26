@@ -71,9 +71,14 @@ def manifest_elements(data):
             for i in range(count):
                 a = off + hsize + astart + i * asize
                 aname, raw, dtype, value = struct.unpack_from('<4xII3xBI', data, a)
-                key = ATTR.get(resmap[aname]) if aname < len(resmap) else None
-                key = key or (strings[aname] if aname < len(strings) else '')
-                attrs[key] = (dtype, value, strings[raw] if raw < len(strings) else None)
+                raw = strings[raw] if raw < len(strings) else None
+                if raw is None and dtype == T_STRING and value < len(strings):
+                    raw = strings[value]  # some repackers keep only the typed value
+                android = ATTR.get(resmap[aname]) if aname < len(resmap) else None
+                if android:  # android: attributes win over same-named ones in other namespaces
+                    attrs[android] = (dtype, value, raw)
+                else:
+                    attrs.setdefault(strings[aname] if aname < len(strings) else '', (dtype, value, raw))
             out.append((strings[name] if name < len(strings) else '', attrs))
     return out
 
@@ -197,16 +202,21 @@ def apk_info(path):
             'min_sdk': min_sdk[1] if min_sdk and min_sdk[0] in (T_INT_DEC, T_INT_HEX) else None,
             'icon_png': None,
         }
-        for icon in _icons(app.get('icon'), res):
-            if icon.endswith('.png') and icon in names:
-                info['icon_png'] = z.read(icon)
-                break
-        else:  # adaptive icons are XML; fall back to the largest launcher PNG
-            pngs = sorted((n for n in names if n.endswith('.png') and 'ic_launcher' in n and 'foreground' not in n),
-                          key=lambda n: z.getinfo(n).file_size)
-            if pngs:
-                info['icon_png'] = z.read(pngs[-1])
+        try:
+            info['icon_png'] = _icon_png(z, names, _icons(app.get('icon'), res))
+        except Exception:  # noqa: BLE001 - any unreadable icon just means no icon
+            pass
     return info
+
+
+def _icon_png(z, names, icons):
+    for icon in icons:
+        if icon.endswith('.png') and icon in names:
+            return z.read(icon)
+    # Adaptive icons are XML; fall back to the largest launcher PNG.
+    pngs = sorted((n for n in names if n.endswith('.png') and 'ic_launcher' in n and 'foreground' not in n),
+                  key=lambda n: z.getinfo(n).file_size)
+    return z.read(pngs[-1]) if pngs else None
 
 
 if __name__ == '__main__':

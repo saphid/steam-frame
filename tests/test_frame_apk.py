@@ -27,10 +27,14 @@ def pool(strings, utf8=False):
     return struct.pack('<HHIIIIII', 1, 28, 28 + len(body), len(strings), 0, 0x100 if utf8 else 0, start, 0) + body
 
 
-def manifest(package, label_ref, version_ref, min_sdk):
-    """<manifest package versionName><uses-sdk minSdkVersion/><application label icon/></manifest>."""
+def manifest(package, label_ref, version_ref, min_sdk, package_raw=True, foreign_label=False):
+    """<manifest package versionName><uses-sdk minSdkVersion/><application label icon/></manifest>.
+
+    package_raw=False drops the package's raw string (as some repackers do);
+    foreign_label adds a non-android `label` attribute after android:label.
+    """
     strings = ['label', 'icon', 'versionName', 'minSdkVersion', 'package', 'manifest', 'uses-sdk',
-               'application', package]
+               'application', package, 'junk', 'label']  # the second 'label' has no android id
     resmap = struct.pack('<4I', 0x01010001, 0x01010002, 0x0101021c, 0x0101020c)
     resmap = struct.pack('<HHI', 0x0180, 8, 8 + len(resmap)) + resmap
 
@@ -42,9 +46,11 @@ def manifest(package, label_ref, version_ref, min_sdk):
 
     none = 0xffffffff
     chunks = (pool(strings) + resmap
-              + element(5, [(4, 8, frame_apk.T_STRING, 8), (2, none, frame_apk.T_REF, version_ref)])
+              + element(5, [(4, 8 if package_raw else none, frame_apk.T_STRING, 8),
+                            (2, none, frame_apk.T_REF, version_ref)])
               + element(6, [(3, none, frame_apk.T_INT_DEC, min_sdk)])
-              + element(7, [(0, none, frame_apk.T_REF, label_ref), (1, none, frame_apk.T_REF, 0x7f020000)]))
+              + element(7, [(0, none, frame_apk.T_REF, label_ref), (1, none, frame_apk.T_REF, 0x7f020000)]
+                        + ([(10, 9, frame_apk.T_STRING, 9)] if foreign_label else [])))
     return struct.pack('<HHI', 3, 8, 8 + len(chunks)) + chunks
 
 
@@ -110,6 +116,18 @@ class ApkInfo(unittest.TestCase):
         self.assertEqual(info['label'], 'com.example.bare')
         self.assertEqual(info['version'], '')
         self.assertEqual(info['abis'], [])
+
+    def test_repacked_manifest(self):
+        # Package kept only as a typed value; a foreign `label` mustn't beat android:label.
+        arsc = resources({(1, '', 0): {0: 1, 1: 2}})
+        info = self.read(apk({
+            'AndroidManifest.xml': manifest('com.example.repacked', 0x7f010000, 0x7f010001, 24,
+                                            package_raw=False, foreign_label=True),
+            'resources.arsc': arsc,
+        }))
+        self.assertEqual(info['package'], 'com.example.repacked')
+        self.assertEqual(info['label'], 'App label')
+        self.assertIsNone(info['icon_png'])
 
     def test_rejects_non_apks(self):
         for data in (b'not a zip', apk({'classes.dex': b''}), apk({'AndroidManifest.xml': b'<manifest/>'})):

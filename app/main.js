@@ -236,8 +236,10 @@ async function firstRunCheck() {
 
 // IPC only from our own page in our own window.
 function fromUi(e) {
-  return !!(win && e.sender === win.webContents && url && e.senderFrame
-            && new URL(e.senderFrame.url).origin === new URL(url).origin);
+  if (!win || e.sender !== win.webContents || !url || !e.senderFrame) return false;
+  try {
+    return new URL(e.senderFrame.url).origin === new URL(url).origin;
+  } catch { return false; }
 }
 
 ipcMain.handle("clipboard:read", (e) => fromUi(e) ? clipboard.readText() : "");
