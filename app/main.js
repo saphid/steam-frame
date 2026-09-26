@@ -1,7 +1,7 @@
 // Frame Control as a desktop app (macOS, Windows, Linux): starts ui/server.py on
 // a free loopback port and shows it in a native window. The server does all the
 // work over the `frame` SSH alias; this file only hosts it.
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
 const { execFile, spawn } = require("child_process");
 const { promisify } = require("util");
 const fs = require("fs");
@@ -17,6 +17,7 @@ const IS_WIN = process.platform === "win32";
 
 // Packaged: <resources>/{ui,scripts,python}. Dev: the repo checkout.
 const ROOT = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
+const TOOLS = path.join(ROOT, "tools");  // bundled adb
 const SERVER = path.join(ROOT, "ui", "server.py");
 const SCRIPTS = path.join(ROOT, "scripts");
 const LOG_DIR = IS_MAC ? path.join(os.homedir(), "Library", "Logs", "Frame Control")
@@ -54,10 +55,16 @@ async function loginPath() {
 }
 
 // The Windows build bundles Python; elsewhere use the system's python3 (3.8+).
+// -I ignores PYTHON* variables and user site-packages, so a PYTHONHOME or
+// PYTHONPATH set for another Python can't break the bundled one. That makes these
+// flags stand in for PYTHONUNBUFFERED, PYTHONDONTWRITEBYTECODE (no __pycache__
+// inside the signed app) and PYTHONUTF8.
+const PY_FLAGS = ["-I", "-u", "-B", "-X", "utf8"];
+
 async function findPython(env) {
   const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3"];
-  const candidates = [];
-  if (IS_WIN) candidates.push(path.join(ROOT, "python", "python.exe"));
+  // The packaged app bundles Python (app/build/fetch-deps.js); a checkout uses PATH.
+  const candidates = [path.join(ROOT, "python", ...(IS_WIN ? ["python.exe"] : ["bin", "python3"]))];
   for (const dir of env.PATH.split(path.delimiter)) {
     // The WindowsApps "python.exe" is a stub that opens the Microsoft Store.
     if (!dir || (IS_WIN && /\\WindowsApps\\?$/i.test(dir))) continue;
@@ -67,7 +74,7 @@ async function findPython(env) {
     try {
       fs.accessSync(p, fs.constants.X_OK);
       // /usr/bin/python3 on macOS is a stub until the Command Line Tools are installed.
-      await run(p, ["-c", "import http.server, sys; assert sys.version_info >= (3, 8)"],
+      await run(p, [...PY_FLAGS, "-c", "import http.server, sys; assert sys.version_info >= (3, 8)"],
                 { timeout: 10000, env, windowsHide: true });
       return p;
     } catch {}
@@ -79,10 +86,8 @@ async function hasSsh(env) {
   try { await run("ssh", ["-V"], { timeout: 5000, env, windowsHide: true }); return true; } catch { return false; }
 }
 
-const PYTHON_HELP = IS_MAC
-  ? "Install the Xcode Command Line Tools (xcode-select --install) or Homebrew's python, then reopen the app."
-  : IS_WIN ? "The bundled Python is missing; reinstall Frame Control."
-  : "Install Python 3.8 or later from your distribution (e.g. sudo apt install python3), then reopen the app.";
+const PYTHON_HELP = app.isPackaged ? "The bundled Python is missing; reinstall Frame Control."
+  : "Install Python 3.8 or later, then reopen the app.";
 const SSH_HELP = IS_WIN
   ? "Turn on Windows' OpenSSH client: Settings → System → Optional features → Add a feature → OpenSSH Client."
   : "Install the OpenSSH client (e.g. sudo apt install openssh-client).";
@@ -108,8 +113,8 @@ function ping(target) {
 }
 
 async function startServer() {
-  const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1",
-                PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", FRAME_CONTROL_APP: "1" };
+  const env = { ...process.env, PATH: await loginPath(), FRAME_CONTROL_APP: "1",
+                ...(fs.existsSync(TOOLS) ? { FRAME_CONTROL_TOOLS: TOOLS } : {}) };
   python = await findPython(env);
   if (!python) throw new Error(`Frame Control needs Python 3.8 or later. ${PYTHON_HELP}`);
   if (!await hasSsh(env)) throw new Error(`Frame Control needs the ssh command. ${SSH_HELP}`);
@@ -118,8 +123,7 @@ async function startServer() {
   const log = fs.openSync(LOG, "a");
   fs.writeSync(log, `\n--- ${new Date().toISOString()} ${python} ${SERVER} --port ${port}\n`);
   // stdin stays open while the app runs; the server exits cleanly when it closes.
-  // -X utf8: the bundled Windows Python ignores PYTHON* variables (isolated mode).
-  const child = spawn(python, ["-X", "utf8", SERVER, "--port", String(port), "--exit-on-eof"],
+  const child = spawn(python, [...PY_FLAGS, SERVER, "--port", String(port), "--exit-on-eof"],
                       { env, stdio: ["pipe", log, log], windowsHide: true });
   child.stdin.on("error", () => {});
   fs.closeSync(log);
@@ -229,13 +233,19 @@ async function firstRunCheck() {
   if (response === 0) setUpConnection();
 }
 
+ipcMain.handle("clipboard:read", (e) => {
+  if (!win || e.sender !== win.webContents || !url || new URL(e.senderFrame.url).origin !== new URL(url).origin) return "";
+  return clipboard.readText();
+});
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1400, height: 950, minWidth: 760, minHeight: 560,
     title: "Frame Control", backgroundColor: BG, show: false,
     ...(IS_MAC ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 26 } }
                : { icon: path.join(__dirname, "build", "icon.png") }),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true,
+                      preload: path.join(__dirname, "preload.js") },
   });
   win.once("ready-to-show", () => win.show());
   if (CHROME_CSS) win.webContents.on("did-finish-load", () => win.webContents.insertCSS(CHROME_CSS));
@@ -259,7 +269,7 @@ async function runInTerminal(argv) {
     const env = { ...process.env, PATH: await loginPath() };
     const py = python || await findPython(env);
     if (!py) throw new Error(`Python 3.8 or later is needed. ${PYTHON_HELP}`);
-    await run(py, [path.join(ROOT, "ui", "frame_host.py"), "terminal", "--", ...argv],
+    await run(py, [...PY_FLAGS, path.join(ROOT, "ui", "frame_host.py"), "terminal", "--", ...argv],
               { env, timeout: 15000, windowsHide: true });
   } catch (err) {
     dialog.showErrorBox("Couldn't open a terminal", String((err.stderr || err.message || err)).trim());
@@ -270,7 +280,7 @@ async function setUpConnection() {
   const alias = `FRAME_ALIAS=${FRAME}`;
   if (IS_MAC) return runInTerminal(["env", alias, "zsh", path.join(SCRIPTS, "connect.sh")]);
   const py = python || await findPython({ ...process.env, PATH: await loginPath() });
-  const setup = [py || "python3", path.join(ROOT, "ui", "frame_connect.py")];
+  const setup = [py || "python3", ...PY_FLAGS, path.join(ROOT, "ui", "frame_connect.py")];
   // A new console inherits our environment on Windows; Linux terminals may not.
   runInTerminal(IS_WIN ? setup : ["env", alias, ...setup]);
 }

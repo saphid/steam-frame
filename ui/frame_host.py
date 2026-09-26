@@ -74,15 +74,12 @@ def install_hint(tool):
         "adb": {"mac": "brew install android-platform-tools",
                 "win": "winget install Google.PlatformTools",
                 "linux": "install your distribution's adb package (e.g. sudo apt install adb)"},
-        "aapt2": {"mac": 'brew install --cask android-commandlinetools, then sdkmanager "build-tools;36.0.0"',
-                  "win": 'install Android Studio\'s command-line tools, then sdkmanager "build-tools;36.0.0"',
-                  "linux": 'install Android\'s command-line tools, then sdkmanager "build-tools;36.0.0"'},
     }
     return hints[tool]["mac" if MAC else "win" if WINDOWS else "linux"]
 
 
 def android_sdk_dirs():
-    """Where the Android SDK usually lives, for adb and aapt2."""
+    """Where the Android SDK usually lives, for adb."""
     dirs = [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT")]
     if MAC:
         dirs += ["~/Library/Android/sdk", "/opt/homebrew/share/android-commandlinetools",
@@ -99,6 +96,11 @@ def adb():
     extra = [os.path.join(d, "platform-tools", exe) for d in android_sdk_dirs()]
     if MAC:
         extra += ["/opt/homebrew/bin/adb", str(Path.home() / ".homebrew/bin/adb"), "/usr/local/bin/adb"]
+    # The app bundles adb as a last resort: an adb you already use goes first, so
+    # two different adb versions don't keep restarting each other's server.
+    tools = os.environ.get("FRAME_CONTROL_TOOLS")
+    if tools:
+        extra.append(os.path.join(tools, exe))
     env = os.environ.get("ADB")
     found = (env if env and os.access(env, os.X_OK) else None) or which("adb", *extra)
     if not found:

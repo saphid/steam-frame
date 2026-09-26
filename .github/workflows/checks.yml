@@ -31,10 +31,10 @@ jobs:
       - name: Server tests
         run: python -m unittest discover -s tests -v
       - name: App syntax
-        run: node --check app/main.js && node --check app/build/make-icon.js && node --check app/build/fetch-python.js
+        run: node --check app/main.js && node --check app/build/make-icon.js && node --check app/build/fetch-deps.js && node --check app/preload.js
 
-  # The server runs on each desktop OS the app ships for. Windows uses the same
-  # Python version the app bundles (app/build/fetch-python.js).
+  # The server runs on each desktop OS the app ships for, on the Python version
+  # the app bundles (app/build/fetch-deps.js) and, on Ubuntu, a newer one.
   server-tests:
     strategy:
       fail-fast: false

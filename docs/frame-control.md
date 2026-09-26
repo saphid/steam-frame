@@ -48,8 +48,8 @@ python3 ui/server.py         # anywhere: then open http://127.0.0.1:47810
   whether any APK worked (F-Droid or not: pick a file, type a package, or use an
   installed app). Your reports are saved on your computer and change the verdicts
   you see. They aren't uploaded anywhere: the shared database is maintainer-only
-  for now (see [compat-db/README.md](../compat-db/README.md)). Needs `adb`, and
-  `aapt2` for reading APK files.
+  for now (see [compat-db/README.md](../compat-db/README.md)). Uses the app's bundled
+  `adb`, or yours if you have one.
 - **Android display**: pick a running Lepton instance (by the app in it) and set
   its resolution (Native 1920×1080, or Sharp 2560×1440 with density scaled to
   match), UI scale (Smaller / Default / Larger, or an exact dpi) and text size
@@ -70,7 +70,10 @@ python3 ui/server.py         # anywhere: then open http://127.0.0.1:47810
 `app/` is an Electron shell. It starts `ui/server.py` on a free loopback port
 and shows it in its own window; the server stops when you quit the app. The
 app bundles `ui/`, `scripts/`, `frame/android/` and the rated catalogue from
-`apk-catalog/`, and on Windows an embedded Python too.
+`apk-catalog/`, plus a standalone Python
+([python-build-standalone](https://github.com/astral-sh/python-build-standalone))
+and `adb` from Google's platform-tools, so there's nothing else to install.
+`app/build/fetch-deps.js` downloads both, pinned by SHA-256.
 
 The server is Python stdlib only and listens on 127.0.0.1. It rejects requests
 with a non-local `Host` header, and any `/api/` request without a custom
@@ -95,8 +98,8 @@ separately.
 
 ## Per-platform notes
 
-**macOS.** The app reads `PATH` from your login shell, so Homebrew's `rsync`,
-`adb` and Python work when you launch it from Finder. Set Up Connection runs
+**macOS.** The app reads `PATH` from your login shell, so Homebrew's `rsync`
+and `adb` are used when you launch it from Finder. Set Up Connection runs
 `scripts/connect.sh` in Terminal. The log is at
 `~/Library/Logs/Frame Control/server.log`. The build is ad-hoc signed and not
 notarized: a downloaded copy is quarantined until you run
@@ -104,18 +107,18 @@ notarized: a downloaded copy is quarantined until you run
 time you use them, macOS asks to allow local network access (for SSH) and
 control of Terminal (for SSH and power actions).
 
-**Windows.** Python is bundled; `ssh` is Windows' built-in OpenSSH client
+**Windows.** `ssh` is Windows' built-in OpenSSH client
 (Settings → System → Optional features, if it's been removed). Set Up
 Connection runs `ui/frame_connect.py` in a console window. Copies use `scp`
 because Windows has no `rsync`. The installer isn't code-signed, so SmartScreen
 warns on first run: choose **More info → Run anyway**. The log is at
 `%APPDATA%\Frame Control\logs\server.log`.
 
-**Linux.** Needs `python3` (3.8 or later) and `ssh`, which most desktops
-have. The AppImage runs anywhere; the `.deb` pulls both in on Debian and
-Ubuntu. Set Up Connection runs `ui/frame_connect.py` in your terminal emulator
-(GNOME Terminal, Konsole, xterm and others). Sending the clipboard needs
-`wl-clipboard` (Wayland) or `xclip` (X11). The log is at
+**Linux.** Needs `ssh`, which most desktops have; the `.deb` pulls it in.
+The arm64 build also needs your distribution's `adb` for Android apps, because
+Google publishes no arm64 Linux platform-tools. Set Up Connection runs
+`ui/frame_connect.py` in your terminal emulator (GNOME Terminal, Konsole, xterm
+and others). The log is at
 `~/.config/Frame Control/logs/server.log`.
 
 ## Building
@@ -125,7 +128,7 @@ cd app
 npm install
 npm start              # run from the checkout without packaging
 npm run dist           # macOS: dist/*.dmg and .zip (Apple Silicon)
-npm run dist:win       # Windows: installer and .zip (fetches the embedded Python first)
+npm run dist:win       # Windows: installer and .zip
 npm run dist:linux     # Linux: AppImage and .deb, x64 and arm64
 ```
 
