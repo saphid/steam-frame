@@ -130,6 +130,27 @@ class ServerGuards(unittest.TestCase):
         status, _ = self.post("/api/launch", ["not", "an", "object"])
         self.assertEqual(status, 400)
 
+    def test_web_install_needs_the_app_page(self):
+        # A website can only open frame-control:// links; it can't call these itself.
+        link = {"url": "https://cdn.example.com/game.apk"}
+        self.assertEqual(self.request("POST", "/api/webinstall/check", link)[0], 403)
+        self.assertEqual(self.request("POST", "/api/webinstall/start", {"id": "x"})[0], 403)
+        status, _, _ = self.request("POST", "/api/webinstall/check", link,
+                                    {"X-Frame-UI": "1", "Host": f"evil.example:{self.port}"})
+        self.assertEqual(status, 403)
+
+    def test_web_install_validation(self):
+        for body in ({}, {"url": 5}, {"url": "http://cdn.example.com/game.apk"}, {"url": "https://10.0.0.2/game.apk"},
+                     {"url": "https://u:p@example.com/game.apk"}, {"url": "https://example.com/"},
+                     {"url": "https://1.1.1.1/game.sh"}, {"manifest": "file:///etc/passwd"},
+                     {"manifest": "https://example.com/m.json", "url": "https://example.com/g.apk"}):
+            status, payload = self.post("/api/webinstall/check", body)
+            self.assertEqual(status, 400, f"{body} -> {payload}")
+        # Only an id from /check starts an install, and only once.
+        self.assertEqual(self.post("/api/webinstall/start", {"id": "made-up"})[0], 400)
+        self.assertEqual(self.request("GET", "/api/webinstall/job?id=x", headers={"X-Frame-UI": "1"})[0], 404)
+        self.assertEqual(self.post("/api/webinstall/cancel", {"job": "x"})[0], 404)
+
     def test_unknown_routes(self):
         self.assertEqual(self.request("GET", "/nope")[0], 404)
         self.assertEqual(self.post("/api/nope", {})[0], 404)

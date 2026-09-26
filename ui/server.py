@@ -15,6 +15,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shlex
 import shutil
 import signal
@@ -36,6 +37,7 @@ import frame_android  # noqa: E402
 import frame_catalog  # noqa: E402
 import frame_host  # noqa: E402
 import frame_store  # noqa: E402
+import frame_webinstall  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 FRAME = os.environ.get("FRAME_ALIAS", "frame")
@@ -760,8 +762,192 @@ def android_display(body):
     return {"message": f"Port {port}: " + "; ".join(c.split(";")[0] for c in cmds), "display": now}
 
 
+# ---- install links from websites (frame-control://install, docs/web-install.md) ----
+# The app hands the link to the page, which asks /check (fetches the manifest,
+# downloads nothing), shows what it found and waits for the user's click before
+# /start. A website can't call these itself: like all of /api/* they need the
+# Host and X-Frame-UI checks in Handler.local_request.
+_web_lock = threading.Lock()
+_web_plans = {}   # id -> checked plan waiting for the user to confirm
+_web_jobs = {}    # id -> progress of the confirmed install (only the latest is kept)
+_web_workers = set()  # threads running an install, joined on shutdown
+_web_closing = False  # set on shutdown; no new installs after that
+MAX_WEB_PLANS = 8
+WEB_TMP_PREFIX = "frame-webinstall-"  # then the server's PID, for sweep_webinstall_tmp
+
+
+def webinstall_check(body):
+    manifest, url = body.get("manifest"), body.get("url")
+    for v in (manifest, url):
+        if v is not None and not isinstance(v, str):
+            raise Failure("manifest and url must be strings", 400)
+    try:
+        plan = frame_webinstall.plan(manifest=manifest, url=url)
+    except frame_webinstall.WebInstallError as e:
+        raise Failure(str(e), 400)
+    pid = secrets.token_urlsafe(16)
+    with _web_lock:
+        while len(_web_plans) >= MAX_WEB_PLANS:
+            _web_plans.pop(next(iter(_web_plans)))
+        _web_plans[pid] = plan
+    shown = ("name", "file", "kind", "kindLabel", "host", "linkHost", "size", "source")
+    return {"id": pid, **{k: plan[k] for k in shown}, "sha256": bool(plan["sha256"])}
+
+
+def webinstall_start(body):
+    pid = body.get("id")
+    with _web_lock:
+        if any(j["phase"] in ("download", "install") for j in _web_jobs.values()):
+            raise Failure("another install from a link is still running", 409)
+        # One use per check: the page can only install what it showed.
+        plan = _web_plans.pop(pid, None) if isinstance(pid, str) else None
+        if not plan:
+            raise Failure("unknown or already used install id; open the link again", 400)
+        job = {"phase": "download", "done": 0, "total": plan["size"], "detail": "", "message": None,
+               "error": None, "cancel": False}
+        if _web_closing:
+            raise Failure("Frame Control is quitting", 503)
+        _web_jobs.clear()
+        _web_jobs[pid] = job
+        # Started under the lock, so shutdown never sees a thread it can't join.
+        worker = threading.Thread(target=_webinstall_run, args=(plan, job), daemon=True)
+        _web_workers.add(worker)
+        worker.start()
+    return {"job": pid}
+
+
+def _webinstall_run(plan, job):
+    tmp = None
+    try:
+        tmp = tempfile.mkdtemp(prefix=f"{WEB_TMP_PREFIX}{os.getpid()}-")
+
+        def progress(done, total):
+            job["done"], job["total"] = done, total
+
+        def detail(*args, **_kw):  # frame_titles may report its steps as text
+            texts = [a for a in args if isinstance(a, str)]
+            if texts:
+                job["detail"] = texts[0][:200]
+
+        def connected(conn):
+            with _web_lock:
+                job["_conn"] = conn
+                stop = job["cancel"]  # cancelled before this connection existed
+            if stop:
+                frame_webinstall.abort(conn)
+
+        path = frame_webinstall.download(plan, tmp, progress=progress, cancelled=lambda: job["cancel"],
+                                         connected=connected)
+        # Under the lock cancel uses, so a cancel it acknowledged is never followed by an install.
+        with _web_lock:
+            if job["cancel"]:
+                raise frame_webinstall.Cancelled("download cancelled")
+            job["phase"] = "install"
+            job.pop("_conn", None)
+        ensure_master()
+        res = frame_webinstall.dispatch(path, name=plan["name"], exe=plan["exe"], progress=detail, source=plan["url"])
+        job["message"], job["phase"] = res["message"], "done"
+    except Exception as e:
+        known = (frame_webinstall.WebInstallError, Failure, frame_android.FrameError)
+        job["error"] = str(e) if isinstance(e, known) else f"{type(e).__name__}: {e}"
+        job["phase"] = "error"
+    finally:
+        with _web_lock:
+            job.pop("_conn", None)
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+        with _web_lock:
+            _web_workers.discard(threading.current_thread())
+
+
+def webinstall_job(query):
+    job = _web_jobs.get((parse_qs(query).get("id") or [""])[0])
+    if not job:
+        raise Failure("unknown install job", 404)
+    with _web_lock:  # the worker adds and drops _conn meanwhile
+        return {k: v for k, v in job.items() if k != "cancel" and not k.startswith("_")}
+
+
+def webinstall_cancel(body):
+    jid = body.get("job")
+    job = _web_jobs.get(jid) if isinstance(jid, str) else None
+    if not job:
+        raise Failure("unknown install job", 404)
+    with _web_lock:
+        if job["phase"] != "download":
+            raise Failure("only the download can be cancelled", 409)
+        job["cancel"] = True
+        conn = job.get("_conn")
+    if conn:
+        frame_webinstall.abort(conn)
+    return {"message": "Cancelling the download"}
+
+
+def webinstall_shutdown():
+    """Stop downloads and give workers a moment to delete their temporary files.
+
+    An install already copying to the Frame may outlive this; sweep_webinstall_tmp
+    removes what it leaves on a later start.
+    """
+    global _web_closing
+    with _web_lock:
+        _web_closing = True
+        conns = []
+        for job in _web_jobs.values():
+            job["cancel"] = True
+            conns.append(job.get("_conn"))  # once: the worker may drop it any time
+        workers = list(_web_workers)
+    for conn in conns:
+        if conn:
+            frame_webinstall.abort(conn)
+    deadline = time.time() + 4  # the app kills the server 5 s after asking it to stop
+    for worker in workers:
+        worker.join(max(0, deadline - time.time()))
+
+
+def _pid_alive(pid):
+    if frame_host.WINDOWS:
+        # os.kill(pid, 0) would terminate the process there; ask the kernel instead.
+        import ctypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # access denied: it exists
+        try:
+            code = ctypes.c_ulong()
+            return not k32.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value == 259  # STILL_ACTIVE
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # exists, owned by someone else
+    return True
+
+
+def sweep_webinstall_tmp():
+    """Delete download folders left by a server that was killed mid-install.
+
+    Folders carry the server's PID, so only a dead server's are taken.
+    """
+    for d in Path(tempfile.gettempdir()).glob(f"{WEB_TMP_PREFIX}*"):
+        m = re.fullmatch(re.escape(WEB_TMP_PREFIX) + r"(\d+)-.*", d.name)
+        if not m:
+            continue
+        pid = int(m[1])
+        try:
+            if pid != os.getpid() and not _pid_alive(pid) and d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+
+
 POST = {"/api/android/display": android_display, "/api/android": android,"/api/launch": launch, "/api/steam": steam, "/api/volume": set_volume, "/api/clipboard": clipboard,
-        "/api/flatpak": flatpak, "/api/open": open_thing, "/api/shots/save": save_shots}
+        "/api/flatpak": flatpak, "/api/open": open_thing, "/api/shots/save": save_shots,
+        "/api/webinstall/check": webinstall_check, "/api/webinstall/start": webinstall_start,
+        "/api/webinstall/cancel": webinstall_cancel}
 
 
 # ---- HTTP ------------------------------------------------------------------
@@ -875,6 +1061,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(steam_frame("owned"))
             elif path == "/api/steam/search":
                 self.send_json(steam_search(url.query))
+            elif path == "/api/webinstall/job":
+                self.send_json(webinstall_job(url.query))
             elif path == "/api/shots":
                 self.send_json(list_shots())
             elif path == "/api/shots/image":
@@ -1034,6 +1222,7 @@ def main():
                          "Windows has no SIGTERM to catch)")
     args = ap.parse_args()
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    sweep_webinstall_tmp()
     if not frame_host.WINDOWS:
         signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt))
     if args.exit_on_eof:
@@ -1051,6 +1240,7 @@ def main():
         # mid-cleanup would abort it and leave the SSH master running.
         if not frame_host.WINDOWS:
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        webinstall_shutdown()
         # The master was started with -N, so it stays up until told to exit.
         if CONTROL:
             subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True, stdin=subprocess.DEVNULL)
