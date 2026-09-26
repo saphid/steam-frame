@@ -149,10 +149,11 @@ computer.
    password once in a terminal window. If it can't find the Frame, type the
    IP address from the Frame's Quick Settings.
 
-   Before asking for the password it tries Valve's SteamOS devkit pairing: if
-   the headset shows a pairing request, approve it and no password is needed.
-   (**Inferred from Valve's source** ([steamos-devkit-service](https://gitlab.steamos.cloud/devkit/steamos-devkit-service)),
-   not yet verified on a Frame; see [SSH](docs/ssh.md#password-free-pairing-steamos-devkit-service).)
+   Before asking for the password it tries Valve's SteamOS devkit pairing: in
+   the headset, open Steam Settings → Developer → **Pair new host** and approve
+   the request, and no password is needed. (The service and the pairing-mode
+   step are verified on a Frame; the approval itself isn't yet. See
+   [SSH](docs/ssh.md#password-free-pairing-steamos-devkit-service).)
 3. That's it. The app now reaches the headset whenever it's awake and on the
    same network. For anywhere else, see [Tailscale](docs/tailscale.md).
 

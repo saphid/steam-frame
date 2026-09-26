@@ -109,10 +109,10 @@ class Targets(unittest.TestCase):
         self.assertEqual((p['target'], p['runtime']), ('game.arm64', 'SteamLinuxRuntime_4-arm64'))
         self.assertEqual(p['runtimes'], ['SteamLinuxRuntime_4-arm64'])
 
-    def test_x86_64_linux_build_is_marked_inferred(self):
+    def test_x86_64_linux_build_warns_it_may_not_start(self):
         p = self.plan({'game.x86_64': elf(0x3E)}, 'game')
         self.assertEqual(p['runtime'], 'SteamLinuxRuntime_4')
-        self.assertIn('inferred', p['note'])
+        self.assertIn("won't start", p['note'])
 
     def test_native_arm64_beats_x86_64(self):
         p = self.plan({'game.x86_64': elf(0x3E, pad=900), 'game.arm64': elf(0xB7)}, 'game')

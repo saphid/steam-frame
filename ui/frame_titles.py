@@ -399,7 +399,9 @@ def runtime_for(target, found=()):
     if fmt == 'elf' and arch == 'arm64':
         return 'SteamLinuxRuntime_4-arm64', 'Native ARM64 Linux build.'
     if fmt == 'elf' and arch == 'x86_64':
-        return 'SteamLinuxRuntime_4', 'x86-64 Linux build: runs through FEX (inferred, not yet checked).'
+        return 'SteamLinuxRuntime_4', ("x86-64 Linux build: probably won't start. It needs the x86-64 Steam "
+                                       "Linux Runtime 4.0, which the Frame didn't install for a sideloaded title "
+                                       "(2026-09-26). Use an ARM64 or Windows build if there is one.")
     raise FrameError(f"{target['path']} is a {arch} Linux program; the Frame runs ARM64 and x86-64 (through FEX) only")
 
 

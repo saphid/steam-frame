@@ -48,8 +48,8 @@ The program's header decides, not its file name:
 |---|---|---|---|
 | Windows `.exe`, x86-64 (PE machine `0x8664`) | `proton-experimental` | 1 | Inferred: ARM64 Proton runs x86-64 code through FEX |
 | Windows `.exe`, 32-bit x86 (`0x14c`) or ARM64 (`0xaa64`) | `proton-experimental` | 1 | Inferred |
-| Linux ELF, aarch64 (`e_machine` `0xB7`) | `SteamLinuxRuntime_4-arm64` | 0 | Inferred: native |
-| Linux ELF, x86-64 (`0x3E`) | `SteamLinuxRuntime_4` | 0 | Inferred: runs through FEX; the least certain row |
+| Linux ELF, aarch64 (`e_machine` `0xB7`) | `SteamLinuxRuntime_4-arm64` | 0 | Verified: starts, but natively (see below) |
+| Linux ELF, x86-64 (`0x3E`) | `SteamLinuxRuntime_4` | 0 | Verified not to start: the runtime isn't installed (see below) |
 | Shell script | the runtime of the Linux binary beside it, else `SteamLinuxRuntime_4-arm64` | 0 | Guess |
 | Anything else (32-bit Linux, other CPUs, DLLs, data) | refused with a message | | |
 
@@ -142,12 +142,30 @@ splits that string is **not checked**.
   server, which only accepts requests from its own page (see
   [frame-control.md](frame-control.md#how-it-works)).
 
-## To check on a headset
+## Checked on a headset
 
-- [ ] `create-shortcut` registers a title and it shows in the library under its id.
-- [ ] An aarch64 build launches in `SteamLinuxRuntime_4-arm64`.
-- [ ] An x86-64 Windows `.exe` launches under Proton Experimental through FEX.
-- [ ] An x86-64 Linux build launches in `SteamLinuxRuntime_4` through FEX.
-- [ ] `steam-devkit-rpc run-game` starts it, and `steamos-delete` removes the shortcut.
-- [ ] How Steam splits a start command with a quoted path.
+Tested 2026-09-26 on a Frame (BUILD_ID 20260922.6101926) with small static test
+programs and PuTTY's official 64-bit `putty.exe`, through both the command line
+and the app (inspect, install job, ▶, Remove, and install links):
+
+- [x] `create-shortcut` registers a title; it shows in the Steam library and in
+  **Sideloaded titles**, and Steam maps it to the chosen compat tool.
+- [x] `steam-devkit-rpc run-game` starts it (Steam logs `devkit run-game: started
+  devkit game "<id>"`), and Remove (`steamos-delete`) deletes the files, the
+  shortcut and the Proton prefix.
+- [x] A quoted path in the start command is fine: Steam runs
+  `proton waitforexitandrun "/home/steamos/devkit-game/<id>/<exe>"`.
+- [x] An x86-64 Windows `.exe` runs under **Proton 11 (stable)** through FEX
+  (ARM64EC) inside the Steam Linux Runtime 4.0 ARM64 container; PuTTY stayed up.
+  Proton Experimental wasn't installed at the time (it was downloading), so it's
+  untested. A Go-built x86-64 test program crashed in `libarm64ecfex.dll`
+  (a FEX limitation with that program, not the sideloading).
+- [ ] **An aarch64 build runs natively, not in `SteamLinuxRuntime_4-arm64`**:
+  Steam records the mapping (`CompatToolMapping`, `compat_log.txt`) but launches
+  the devkit title without the runtime's `_v2-entry-point` prefix. Fine for a
+  self-contained build; a build that needs the runtime's libraries may not start.
+- [ ] **An x86-64 Linux build doesn't start**: Steam logs `Tool 4183110 "Steam
+  Linux Runtime 4.0" is found for appID …, but is not installed`, and the Frame
+  doesn't install that x86-64 runtime for a devkit title (a `steam://install/4183110`
+  request did nothing).
 - [ ] Whether these titles open as flat panels or need anything VR-specific.

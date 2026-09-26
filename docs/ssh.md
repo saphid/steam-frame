@@ -65,15 +65,23 @@ The script only asks for the password if the pairing below doesn't work.
 
 ## Password-free pairing (SteamOS devkit service)
 
-**Inferred from Valve's source ([steamos-devkit-service](https://gitlab.steamos.cloud/devkit/steamos-devkit-service),
-[steamos-devkit](https://gitlab.steamos.cloud/devkit/steamos-devkit) client); not yet
-verified on a Frame.** SteamOS's devkit service is what Valve's Devkit Client
-uses to pair. `scripts/connect.sh` and `ui/frame_connect.py` try it first:
+From Valve's source ([steamos-devkit-service](https://gitlab.steamos.cloud/devkit/steamos-devkit-service),
+[steamos-devkit](https://gitlab.steamos.cloud/devkit/steamos-devkit) client). **Verified on a
+Frame 2026-09-26** (BUILD_ID 20260922.6101926): the service runs with Developer Mode
+on, `properties.json` answers with `"login": "steamos"`, the headset advertises
+`_steamos-devkit._tcp` as `frame`, and `/register` needs pairing mode (below). The
+approve prompt and key install are not verified yet. SteamOS's devkit service is
+what Valve's Devkit Client uses to pair. `scripts/connect.sh` and
+`ui/frame_connect.py` try it first:
 
 - The headset serves HTTP on port **32000** and advertises mDNS
   `_steamos-devkit._tcp`. `GET /properties.json` gives the `login` user; the
   script uses it as `User` (unless you set `FRAME_USER`, or it says `root`),
   for the password fallback too, and keeps it on re-runs.
+- **Open Steam Settings → Developer → Pair new host in the headset first.**
+  Otherwise `/register` answers at once with `403` `"please put the Steam client
+  in pairing mode: Settings -> Developer -> Pair new host"` (verified). The
+  scripts say so and keep asking for 2 minutes while you open it.
 - `POST /register` with `ssh-rsa <key> <comment> 900b919520e4cf601998a71eec318fec`
   (a fixed token from Valve's client) shows an approve prompt inside the
   headset naming the comment (`frame-control@<your computer>`). It waits 30 s,
@@ -89,8 +97,7 @@ uses to pair. `scripts/connect.sh` and `ui/frame_connect.py` try it first:
   to copying the ed25519 key with the Developer Mode password, as before.
 
 Anyone on your network can send the request, so only approve a prompt you
-started. Whether the Frame runs this service with Developer Mode on is the
-unverified part: `curl http://frame.local:32000/properties.json` answers the question.
+started. `curl http://<frame-ip>:32000/properties.json` shows whether the service is up.
 
 `~/.ssh/authorized_keys` lives under `/home`, which SteamOS keeps across OS
 updates (inferred from Deck; the Frame uses the same A/B image scheme).

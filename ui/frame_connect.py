@@ -58,11 +58,14 @@ def say(msg):
 # port 32000: GET /properties.json names the user to log in as; POST /register with
 # "ssh-rsa <key> <comment> <magic>" shows an approve prompt in the headset (the
 # comment is what it displays, 30 s to answer), then installs the key and turns sshd on.
+# The prompt only appears while Steam is on Settings > Developer > Pair new host;
+# otherwise /register answers 403 "please put the Steam client in pairing mode".
 
 DEVKIT_PORT = 32000
 DEVKIT_SERVICE = "_steamos-devkit._tcp"
 MAGIC_PHRASE = "900b919520e4cf601998a71eec318fec"  # fixed token Valve's client appends
 REGISTER_TIMEOUT = 60
+PAIRING_MODE_WAIT = 120  # seconds to keep asking while the user opens "Pair new host"
 # A LAN host: never go through an HTTP(S)_PROXY from the environment.
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -141,8 +144,15 @@ def devkit_pair(host, pub, comment, port=DEVKIT_PORT, on_login=None):
         return f"devkit service not reachable on port {port}: {why(e)}"
     if login and on_login:
         on_login(login)
-    say("    Approve the pairing request in the headset (it waits about 30 seconds)")
-    ok, msg = register(host, register_body(pub, comment), port)
+    say("    In the headset: Steam Settings > Developer > Pair new host, then approve the request")
+    body = register_body(pub, comment)
+    ok, msg = register(host, body, port)
+    # The headset refuses at once unless Steam is on its "Pair new host" screen
+    # (verified on a Frame, 2026-09-26), so keep asking while the user opens it.
+    deadline = time.monotonic() + PAIRING_MODE_WAIT
+    while not ok and "pairing mode" in msg and time.monotonic() < deadline:
+        time.sleep(3)
+        ok, msg = register(host, body, port)
     return None if ok else f"devkit pairing failed: {msg}"
 
 

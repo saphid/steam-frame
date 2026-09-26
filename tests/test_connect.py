@@ -22,6 +22,7 @@ PUB = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC+/x= frame-control@old\n"
 class StubDevkit(BaseHTTPRequestHandler):
     """Answers like steamos-devkit-service; `reply` picks the /register outcome."""
     reply = (200, b"Registered\n")
+    replies = []  # if set, each /register takes the next one instead of `reply`
     properties = {"txtvers": 1, "login": "steamos", "settings": "{}", "devkit1": ["devkit-1"]}
     bodies = []
 
@@ -41,7 +42,7 @@ class StubDevkit(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         StubDevkit.bodies.append((self.path, self.headers["Content-Type"], body))
-        code, text = self.reply
+        code, text = StubDevkit.replies.pop(0) if StubDevkit.replies else self.reply
         self.send_response(code)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
@@ -63,6 +64,7 @@ class DevkitPairing(unittest.TestCase):
     def setUp(self):
         StubDevkit.reply = (200, b"Registered\n")
         StubDevkit.bodies = []
+        StubDevkit.replies = []
         self.said = []
         self._say, fc.say = fc.say, self.said.append
 
@@ -104,7 +106,31 @@ class DevkitPairing(unittest.TestCase):
         path, ctype, body = StubDevkit.bodies[0]
         self.assertEqual((path, ctype), ("/register", "text/plain"))
         self.assertEqual(body.decode(), fc.register_body(PUB, "frame-control@test"))
-        self.assertTrue(any("Approve the pairing request" in s for s in self.said))
+        self.assertTrue(any("Pair new host" in s for s in self.said))
+
+    NOT_PAIRING = (403, b'{"error": "devkit approve-ssh-key: please put the Steam client in pairing mode: '
+                        b'Settings -> Developer -> Pair new host"}')
+
+    def test_pair_waits_for_pairing_mode(self):
+        # The headset refuses until Steam is on "Pair new host", then prompts.
+        StubDevkit.replies = [self.NOT_PAIRING, self.NOT_PAIRING, (200, b"Registered\n")]
+        sleep, fc.time.sleep = fc.time.sleep, lambda s: None
+        try:
+            reason = fc.devkit_pair("127.0.0.1", PUB, "c", self.port)
+        finally:
+            fc.time.sleep = sleep
+        self.assertIsNone(reason)
+        self.assertEqual(len(StubDevkit.bodies), 3)
+
+    def test_pair_gives_up_without_pairing_mode(self):
+        StubDevkit.reply = self.NOT_PAIRING
+        wait, fc.PAIRING_MODE_WAIT = fc.PAIRING_MODE_WAIT, 0
+        try:
+            reason = fc.devkit_pair("127.0.0.1", PUB, "c", self.port)
+        finally:
+            fc.PAIRING_MODE_WAIT = wait
+        self.assertIn("pairing mode", reason)
+        self.assertEqual(len(StubDevkit.bodies), 1)
 
     def test_pair_refused_falls_back(self):
         StubDevkit.reply = (403, b'{"error": "timeout - Steam did not respond to the pairing request"}')

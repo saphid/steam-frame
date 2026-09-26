@@ -182,17 +182,23 @@ pair_with_devkit() {
   comment="frame-control@$(hostname -s | tr -cs 'A-Za-z0-9._-' '-' | sed 's/^[-.]*//; s/[-.]*$//')"
   [[ "$comment" == "frame-control@" ]] && comment="frame-control@computer"
   body="ssh-rsa $(awk '{print $2}' "$DEVKIT_KEY.pub") $comment $MAGIC_PHRASE"
-  print "    Approve the pairing request in the headset (it waits about 30 seconds)"
-  if ! resp=$(print -r -- "$body" | curl -sS --noproxy '*' -m 60 -H 'Content-Type: text/plain' \
-      --data-binary @- -w '\n%{http_code}' "$(devkit_url /register)" 2>&1); then
-    devkit_why="devkit pairing failed: no answer (${${resp##*curl: }%%$'\n'*})"; return 1
-  fi
-  code=${resp##*$'\n'}
-  text=${resp%$'\n'*}
-  if [[ "$code" != 2* ]]; then
+  print "    In the headset: Steam Settings > Developer > Pair new host, then approve the request"
+  # The headset refuses at once unless Steam is on its "Pair new host" screen
+  # (verified on a Frame, 2026-09-26), so keep asking for 2 minutes while it's opened.
+  local deadline=$(( SECONDS + 120 ))
+  while true; do
+    if ! resp=$(print -r -- "$body" | curl -sS --noproxy '*' -m 60 -H 'Content-Type: text/plain' \
+        --data-binary @- -w '\n%{http_code}' "$(devkit_url /register)" 2>&1); then
+      devkit_why="devkit pairing failed: no answer (${${resp##*curl: }%%$'\n'*})"; return 1
+    fi
+    code=${resp##*$'\n'}
+    text=${resp%$'\n'*}
+    [[ "$code" == 2* ]] && break
     err=$(print -r -- "$text" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-    devkit_why="devkit pairing failed: ${err:-${text:-HTTP $code}}"; return 1
-  fi
+    devkit_why="devkit pairing failed: ${err:-${text:-HTTP $code}}"
+    [[ "$devkit_why" == *"pairing mode"* ]] && (( SECONDS < deadline )) || return 1
+    sleep 3
+  done
   # The approval is what turns sshd on, so it may take a moment to answer.
   local i
   for i in {1..10}; do
