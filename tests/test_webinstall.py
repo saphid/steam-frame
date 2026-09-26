@@ -181,9 +181,19 @@ class Downloads(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        env = mock.patch.dict(os.environ, {wi.LOCAL_LINKS_ENV: "1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_localhost_links_need_the_developer_switch(self):
+        # Without it, a website's link can't make the app fetch from local services.
+        with mock.patch.dict(os.environ, {wi.LOCAL_LINKS_ENV: ""}):
+            for kw in ({"manifest": f"{self.base}/manifest.json"}, {"url": f"{self.base}/game.apk"}):
+                with self.assertRaisesRegex(wi.WebInstallError, wi.LOCAL_LINKS_ENV):
+                    wi.plan(**kw)
 
     def test_manifest_round_trip(self):
         p = wi.plan(manifest=f"{self.base}/manifest.json")
@@ -371,16 +381,17 @@ class ServerJobs(unittest.TestCase):
     def test_dead_servers_leftovers_swept(self):
         dead = subprocess.Popen([sys.executable, "-c", "pass"])
         dead.wait()
-        prefix = self.server.WEB_TMP_PREFIX
-        gone = tempfile.mkdtemp(prefix=f"{prefix}{dead.pid}-")
-        live = tempfile.mkdtemp(prefix=f"{prefix}{os.getpid()}-")
-        try:
-            self.server.sweep_webinstall_tmp()
-            self.assertFalse(os.path.exists(gone))
-            self.assertTrue(os.path.exists(live))
-        finally:
-            shutil.rmtree(gone, ignore_errors=True)
-            shutil.rmtree(live, ignore_errors=True)
+        # Downloads and title staging (unzipped titles) are both swept.
+        for prefix in (self.server.WEB_TMP_PREFIX, self.server.frame_titles.TMP_PREFIX):
+            gone = tempfile.mkdtemp(prefix=f"{prefix}{dead.pid}-")
+            live = tempfile.mkdtemp(prefix=f"{prefix}{os.getpid()}-")
+            try:
+                self.server.sweep_tmp()
+                self.assertFalse(os.path.exists(gone), prefix)
+                self.assertTrue(os.path.exists(live), prefix)
+            finally:
+                shutil.rmtree(gone, ignore_errors=True)
+                shutil.rmtree(live, ignore_errors=True)
 
     def test_temp_dir_failure_ends_the_job(self):
         job, dispatch = self.run_job(mkdtemp_error=OSError("disk full"))

@@ -39,6 +39,7 @@ DIR_RE = re.compile(r'^/[A-Za-z0-9_./-]+$')
 # Zip limits: well above any real game, well below a zip bomb.
 MAX_UNPACKED = 64 * 1024**3
 MAX_ENTRIES = 200000
+TMP_PREFIX = 'frame-title-'  # then the server's PID, so server.sweep_tmp can clear a killed run's
 MAX_RATIO = 200                           # uncompressed / compressed, once past 1 GB
 
 # The Steam compat tool aliases Valve's client uses (devkit_client RUNTIME_ALIASES).
@@ -423,15 +424,15 @@ def inspect(path, name=None):
             if _has_links(root):
                 # scp -r follows links, so a link out of the folder could upload
                 # anything; copy the folder with its links made safe first.
-                work = tempfile.mkdtemp(prefix='frame-title-')
+                work = tempfile.mkdtemp(prefix=f'{TMP_PREFIX}{os.getpid()}-')
                 root = _stage_folder(root, os.path.join(work, os.path.basename(root)))
         elif path.lower().endswith('.zip'):
-            work = tempfile.mkdtemp(prefix='frame-title-')
+            work = tempfile.mkdtemp(prefix=f'{TMP_PREFIX}{os.getpid()}-')
             extract_zip(path, work)
             root = _unwrap(work)
         elif classify(path):
             # A single executable is uploaded on its own; don't copy a whole Downloads folder.
-            work = tempfile.mkdtemp(prefix='frame-title-')
+            work = tempfile.mkdtemp(prefix=f'{TMP_PREFIX}{os.getpid()}-')
             shutil.copy2(path, os.path.join(work, os.path.basename(path)))
             root = work
         else:

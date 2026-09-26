@@ -60,9 +60,11 @@ What gets installed depends on the file name's extension:
 Frame Control refuses a link, and downloads nothing, unless:
 
 - Every URL (the manifest's, the file's and each redirect) is `https://`.
-  `http://` works only for `localhost` or `127.0.0.1`, for testing, and only
-  when the link itself points there: a public manifest can't send Frame
-  Control to your own computer.
+  `http://` works only for `localhost` or `127.0.0.1`, for testing: only when
+  Frame Control runs with `FRAME_CONTROL_LOCAL_LINKS=1`, and only when the
+  link itself points there. It's off by default so a website's link can't make
+  the app fetch from services on your computer, and a public manifest can
+  never send it there.
 - No URL has a user name or password in it (`https://user:pw@…`).
 - No host is, or resolves to, a private, loopback, link-local, CGNAT
   (100.64.0.0/10), multicast or otherwise non-public address. Every address
@@ -116,7 +118,9 @@ Control" link. It isn't published anywhere yet; host a copy to use it.
 
 ## Testing locally
 
-Serve the manifest and file from your own computer:
+Start Frame Control with `FRAME_CONTROL_LOCAL_LINKS=1` in its environment (for
+example `FRAME_CONTROL_LOCAL_LINKS=1 npm start` in `app/`), then serve the
+manifest and file from your own computer:
 
 ```sh
 cd mygame && python3 -m http.server 8000

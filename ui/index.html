@@ -1880,7 +1880,7 @@ async function wiPoll(gen) {
     if (j.phase === "done") {
       log(j.message, "ok"); toast(j.message);
       $("wiDlg").close();
-      loadAndroid(); refresh();
+      loadAndroid(); loadTitles(); refresh();
     } else {
       $("wiMsg").textContent = j.error;
       log(`Install from link failed: ${j.error}`, "e"); toast(`Install failed: ${j.error}`, true);

@@ -10,10 +10,10 @@ A manifest is the same JSON FrameDrop uses, so one works for both tools:
 "frame-control.install/v1" is accepted with the same shape.
 
 Rules: HTTPS only, except http(s)://localhost or 127.0.0.1 for testing, and then
-only when the link itself points there. No credentials in URLs, no private,
-loopback, link-local or CGNAT addresses (checked on every redirect, and the
-connection goes to the address that was checked, so DNS can't change it in
-between). The file URL must end in a file name.
+only with FRAME_CONTROL_LOCAL_LINKS=1 set and when the link itself points there.
+No credentials in URLs, no private, loopback, link-local or CGNAT addresses
+(checked on every redirect, and the connection goes to the address that was
+checked, so DNS can't change it in between). The file URL must end in a file name.
 
 Python stdlib only, 3.9 compatible.
 """
@@ -39,6 +39,8 @@ MAX_REDIRECTS = 5
 TIMEOUT = 30                  # seconds per socket operation
 CHUNK = 1 << 20
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
+# Off by default: otherwise any website could make the app fetch from local services.
+LOCAL_LINKS_ENV = "FRAME_CONTROL_LOCAL_LINKS"
 USER_AGENT = "FrameControl (+https://github.com/saphid/steam-frame)"
 # What dispatch() can install, by file extension.
 KINDS = {".apk": "apk", ".zip": "title", ".exe": "title"}
@@ -101,7 +103,7 @@ def check_url(url, allow_local=False):
         raise WebInstallError("the URL has no host")
     local = host in LOCAL_HOSTS
     if local and not allow_local:
-        raise WebInstallError("localhost is only allowed when the link itself points there (for testing)")
+        raise WebInstallError(f"localhost links are for testing: set {LOCAL_LINKS_ENV}=1, and the link itself must point there")
     if scheme == "http" and not local:
         raise WebInstallError("only https:// is allowed (http:// only for localhost while testing)")
     if not local:
@@ -342,9 +344,10 @@ def plan(manifest=None, url=None):
     if (manifest is None) == (url is None):
         raise WebInstallError("give either manifest or url")
     link = manifest if manifest is not None else url
-    # localhost is for testing a link on your own computer, so only a link that
-    # starts there may reach it: a public manifest can't point at localhost.
-    allow_local = check_url(link, allow_local=True)[3]
+    # localhost is for testing a link on your own computer: only with the developer
+    # switch on, and only for a link that starts there (a public manifest can't
+    # point at localhost).
+    allow_local = check_url(link, allow_local=os.environ.get(LOCAL_LINKS_ENV) == "1")[3]
     if manifest is not None:
         m = fetch_manifest(manifest, allow_local)
         name, f = m["name"], m["file"]

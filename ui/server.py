@@ -890,7 +890,7 @@ _web_jobs = {}    # id -> progress of the confirmed install (only the latest is 
 _web_workers = set()  # threads running an install, joined on shutdown
 _web_closing = False  # set on shutdown; no new installs after that
 MAX_WEB_PLANS = 8
-WEB_TMP_PREFIX = "frame-webinstall-"  # then the server's PID, for sweep_webinstall_tmp
+WEB_TMP_PREFIX = "frame-webinstall-"  # then the server's PID, for sweep_tmp
 
 
 def webinstall_check(body):
@@ -1003,7 +1003,7 @@ def webinstall_cancel(body):
 def webinstall_shutdown():
     """Stop downloads and give workers a moment to delete their temporary files.
 
-    An install already copying to the Frame may outlive this; sweep_webinstall_tmp
+    An install already copying to the Frame may outlive this; sweep_tmp
     removes what it leaves on a later start.
     """
     global _web_closing
@@ -1044,21 +1044,26 @@ def _pid_alive(pid):
     return True
 
 
-def sweep_webinstall_tmp():
-    """Delete download folders left by a server that was killed mid-install.
+def sweep_tmp():
+    """Delete download and title staging folders left by a server killed mid-install.
 
     Folders carry the server's PID, so only a dead server's are taken.
     """
-    for d in Path(tempfile.gettempdir()).glob(f"{WEB_TMP_PREFIX}*"):
-        m = re.fullmatch(re.escape(WEB_TMP_PREFIX) + r"(\d+)-.*", d.name)
-        if not m:
-            continue
-        pid = int(m[1])
-        try:
-            if pid != os.getpid() and not _pid_alive(pid) and d.is_dir():
-                shutil.rmtree(d, ignore_errors=True)
-        except OSError:
-            pass
+    for prefix in (WEB_TMP_PREFIX, frame_titles.TMP_PREFIX):
+        for d in Path(tempfile.gettempdir()).glob(f"{prefix}*"):
+            _sweep_one(prefix, d)
+
+
+def _sweep_one(prefix, d):
+    m = re.fullmatch(re.escape(prefix) + r"(\d+)-.*", d.name)
+    if not m:
+        return
+    pid = int(m[1])
+    try:
+        if pid != os.getpid() and not _pid_alive(pid) and d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
 
 
 POST = {"/api/android/display": android_display, "/api/android": android, "/api/titles": titles, "/api/launch": launch, "/api/steam": steam, "/api/volume": set_volume, "/api/clipboard": clipboard,
@@ -1350,7 +1355,7 @@ def main():
                          "Windows has no SIGTERM to catch)")
     args = ap.parse_args()
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    sweep_webinstall_tmp()
+    sweep_tmp()
     if not frame_host.WINDOWS:
         signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt))
     if args.exit_on_eof:
