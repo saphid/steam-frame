@@ -36,12 +36,18 @@ if ! git -C src rev-parse -q --verify HEAD >/dev/null 2>&1; then
 fi
 guard
 stage "src at $(git -C src log -1 --format='%h %s')"
-stage "gclient sync"
-gclient sync --nohooks --no-history -D --shallow --revision "src@$(git -C src rev-parse HEAD)" -j 8
-guard
-stage "runhooks"
-gclient runhooks
-src/build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
+rev=$(git -C src rev-parse HEAD)
+# Sync once per revision: once the patch below is applied, gclient sync
+# refuses to run on the modified checkout, so re-runs must skip it.
+if [ "$(cat "$W/synced" 2>/dev/null)" != "$rev" ]; then
+  stage "gclient sync"
+  gclient sync --nohooks --no-history -D --shallow --revision "src@$rev" -j 8
+  guard
+  stage "runhooks"
+  gclient runhooks
+  src/build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
+  echo "$rev" > "$W/synced"
+fi
 guard
 cd src
 # CL 8441736's XR seccomp policy refuses getsockopt, and SteamVR's IPC client

@@ -3,6 +3,10 @@
 Goal: open a web VR180 or 360 player (DeoVR and DL8 embeds, WebXR samples),
 press its VR button, and watch in 3D in the headset.
 
+A standalone, public version of this build (build script, the SO_PEERCRED
+patch, and a Frame-side installer that adds "Chromium XR" to the Steam library)
+is at [saphid/chromium-webxr-steam-frame](https://github.com/saphid/chromium-webxr-steam-frame).
+
 ## Why Flathub Chromium can't
 
 **Verified 2026-09-25** (Frame BUILD_ID 20260922.6101926, Flathub
