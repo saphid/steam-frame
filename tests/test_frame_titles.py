@@ -153,6 +153,26 @@ class Targets(unittest.TestCase):
         with self.assertRaises(FrameError):
             frame_titles._choose(p, 'Game/../../outside.exe')
 
+    def test_root_relative_path_wins_over_archive_prefix(self):
+        # Game/Game/A.exe and Game/A.exe: 'Game/A.exe' is a real path under the root Game/.
+        p = self.plan({'Game/Game/A.exe': pe(0x8664), 'Game/A.exe': pe(0x8664)}, 'Game')
+        self.assertEqual(p['unwrapped'], 'Game')
+        frame_titles._choose(p, 'Game/A.exe')
+        self.assertEqual(p['target'], 'Game/A.exe')
+
+    @unittest.skipIf(os.name == 'nt', 'needs symlinks')
+    def test_prefix_is_taken_before_staging(self):
+        # A folder with a link is staged into a temporary copy; the prefix still names
+        # the folders stepped into in the original.
+        d = self.tree({'Game/A.exe': pe(0x8664)})
+        os.symlink('A.exe', os.path.join(d, 'Game', 'link.exe'))
+        p = frame_titles.inspect(d, 'Game')
+        try:
+            self.assertEqual(p['unwrapped'], 'Game')
+            self.assertTrue(p['work'])
+        finally:
+            frame_titles.discard(p)
+
 
 class Zips(unittest.TestCase):
     def setUp(self):

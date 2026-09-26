@@ -4,6 +4,7 @@ import os
 import struct
 import sys
 import tempfile
+import tracemalloc
 import unittest
 import zipfile
 
@@ -144,6 +145,26 @@ class ApkInfo(unittest.TestCase):
         finally:
             frame_apk.MAX_MANIFEST = limit
 
+    def test_forged_sizes_dont_inflate_everything(self):
+        # The central directory claims 1 byte; the deflated data holds 16 MB of zeros.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('AndroidManifest.xml', bytes(16 * 1024**2))
+        data = bytearray(buf.getvalue())
+        for sig, field in ((b'PK\x01\x02', 24), (b'PK\x03\x04', 22)):
+            at = data.index(sig)
+            data[at + field:at + field + 4] = struct.pack('<I', 1)
+        limit, frame_apk.MAX_MANIFEST = frame_apk.MAX_MANIFEST, 1024**2
+        tracemalloc.start()
+        try:
+            with self.assertRaises(frame_apk.ApkError):
+                self.read(bytes(data))
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+            frame_apk.MAX_MANIFEST = limit
+        self.assertLess(peak, 8 * 1024**2)
+
     def test_reference_cycles_and_fan_out_are_bounded(self):
         res = frame_apk.Resources(b'')
         ref = frame_apk.T_REF
@@ -153,6 +174,16 @@ class ApkInfo(unittest.TestCase):
         res.entries = {i: [('', 0, ref, i + 1)] * 5 for i in range(1, 6)}
         res.entries[6] = [('', 0, frame_apk.T_STRING, 0)]
         self.assertEqual(len(res.values(1)), frame_apk.MAX_VALUES)
+        # Forty references at each hop round a four-id cycle: millions of dead ends.
+        looked = []
+
+        class Counting(dict):
+            def get(self, key, default=None):
+                looked.append(key)
+                return dict.get(self, key, default)
+        res.entries = Counting({i: [('', 0, ref, i % 4 + 1)] * 40 for i in range(1, 5)})
+        self.assertEqual(res.values(1), [])
+        self.assertLess(len(looked), frame_apk.MAX_STEPS + 10)
 
 
 if __name__ == '__main__':

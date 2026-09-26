@@ -18,6 +18,7 @@ MAX_MANIFEST = 16 * 1024**2
 MAX_ARSC = 128 * 1024**2      # real ones are a few MB; the largest apps' tens of MB
 MAX_ICON = 8 * 1024**2
 MAX_VALUES = 256              # resolved values per reference, across all its hops
+MAX_STEPS = 4096              # entries examined per reference, dead ends and cycles included
 
 
 class ApkError(Exception):
@@ -135,18 +136,20 @@ class Resources:
                 resid = (pid << 24) | (tid << 16) | index
                 self.entries.setdefault(resid, []).append((language, density, dtype, value))
 
-    def values(self, resid, depth=0, seen=frozenset()):
-        """[(language, density, type, data)] with references followed, at most
-        MAX_VALUES of them and never round a cycle."""
+    def values(self, resid, depth=0, seen=frozenset(), steps=None):
+        """[(language, density, type, data)] with references followed: never round a
+        cycle, at most MAX_VALUES results and MAX_STEPS entries examined in all."""
+        steps = steps if steps is not None else [MAX_STEPS]
         out = []
         seen = seen | {resid}
         for lang, dens, dtype, value in self.entries.get(resid, []):
-            if len(out) >= MAX_VALUES:
+            steps[0] -= 1
+            if steps[0] < 0 or len(out) >= MAX_VALUES:
                 break
             if dtype == T_REF and depth < 5:
                 if value not in seen:
                     out += [(lang or l2, dens or d2, t2, v2)
-                            for l2, d2, t2, v2 in self.values(value, depth + 1, seen)]
+                            for l2, d2, t2, v2 in self.values(value, depth + 1, seen, steps)]
             else:
                 out.append((lang, dens, dtype, value))
         return out[:MAX_VALUES]
@@ -184,10 +187,16 @@ def _icons(attr, res):
 
 
 def _read(z, name, limit):
+    """A member's bytes, inflating at most limit + 1 of them whatever its header claims
+    (ZipFile.read inflates everything first, then trims to the declared size)."""
     size = z.getinfo(name).file_size
     if size > limit:
         raise ApkError(f'{name} in the APK is {size / 1024**2:.0f} MB, more than a real one ({limit // 1024**2} MB)')
-    return z.read(name)
+    with z.open(name) as f:
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise ApkError(f'{name} in the APK is larger than a real one ({limit // 1024**2} MB)')
+    return data
 
 
 def apk_info(path):
