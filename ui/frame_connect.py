@@ -119,7 +119,9 @@ def write_config(host, port=22):
 
 
 def key_login_works():
-    return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", FRAME_ALIAS, "true"],
+    # accept-new: trust a first-seen host key (as the copy step does); a changed one still fails.
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+                           "-o", "StrictHostKeyChecking=accept-new", FRAME_ALIAS, "true"],
                           capture_output=True).returncode == 0
 
 

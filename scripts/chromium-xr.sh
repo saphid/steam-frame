@@ -9,7 +9,7 @@
 #
 # Usage:
 #   scripts/chromium-xr.sh install [TARBALL]  # default: scp from $BUILD_HOST
-#   scripts/chromium-xr.sh launch [URL]       # opens in the headset desktop
+#   scripts/chromium-xr.sh launch [URL]       # opens as its own panel in the headset
 #   scripts/chromium-xr.sh check              # isSessionSupported via DevTools
 set -euo pipefail
 
@@ -35,10 +35,15 @@ case "${1:-}" in
     ssh "$FRAME_ALIAS" '~/chromium-xr.new/chrome --version && rm -rf ~/chromium-xr && mv ~/chromium-xr.new ~/chromium-xr'
     ;;
   launch)
-    # run-on-frame starts in $HOME on the Frame, so the profile path is relative.
-    exec "$here/run-on-frame.sh" -- '~/chromium-xr/chrome' \
+    # Its own VR panel on gamescope's X display, so the Plasma desktop doesn't
+    # need to be open. The app starts in $HOME, so the profile path is relative.
+    # Without --no-first-run and --password-store=basic, startup can stop at a
+    # first-run or keyring prompt before DevTools comes up.
+    exec "$here/panel-on-frame.sh" --name chromium-xr -- '~/chromium-xr/chrome' \
       --user-data-dir=.config/chromium-xr \
       --enable-features=OpenXR \
+      --ozone-platform=x11 \
+      --no-first-run --no-default-browser-check --password-store=basic \
       --remote-debugging-port="$DEVTOOLS_PORT" \
       "${2:-https://immersive-web.github.io/webxr-samples/}"
     ;;

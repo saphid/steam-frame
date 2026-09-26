@@ -29,7 +29,9 @@ class FrameError(RuntimeError):
 
 def ssh(cmd, input=None, timeout=120):
     try:
-        p = subprocess.run(['ssh', *SSH_OPTS, FRAME, cmd], input=input, capture_output=True,
+        # No inherited stdin (see server.ssh): Windows' ssh.exe would wait on it.
+        feed = {'input': input} if input is not None else {'stdin': subprocess.DEVNULL}
+        p = subprocess.run(['ssh', *SSH_OPTS, FRAME, cmd], capture_output=True, **feed,
                            timeout=timeout, text=isinstance(input, str) or input is None)
     except subprocess.TimeoutExpired:
         raise FrameError(f'timed out talking to {FRAME}')
@@ -65,7 +67,7 @@ def apk_info(path):
     tool = aapt2()
     if not tool:
         raise FrameError(f"aapt2 not found: {frame_host.install_hint('aapt2')}")
-    out = subprocess.run([tool, 'dump', 'badging', path], capture_output=True, text=True).stdout
+    out = subprocess.run([tool, 'dump', 'badging', path], capture_output=True, stdin=subprocess.DEVNULL, text=True).stdout
     m = re.search(r"package: name='([^']+)'.*?versionName='([^']*)'", out)
     if not m:
         raise FrameError(f'not a readable APK: {os.path.basename(path)}')
@@ -115,7 +117,7 @@ def _copy(src, dest, executable=False, timeout=600):
     else:
         cmd = ['scp', *SSH_OPTS, src, f'{FRAME}:{dest}']
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout)
+        subprocess.run(cmd, check=True, capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise FrameError(f'copying {name} to the Frame timed out')
     except subprocess.CalledProcessError as e:

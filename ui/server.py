@@ -95,7 +95,7 @@ def ensure_master():
 
     def up():
         try:
-            return subprocess.run([*MUX, "-O", "check", FRAME], capture_output=True,
+            return subprocess.run([*MUX, "-O", "check", FRAME], capture_output=True, stdin=subprocess.DEVNULL,
                                   timeout=5).returncode == 0
         except subprocess.TimeoutExpired:
             return False
@@ -118,7 +118,10 @@ def ensure_master():
 def ssh(remote, *, stdin=None, timeout=30, text=True):
     try:
         ensure_master()
-        r = subprocess.run([*SSH, FRAME, remote], input=stdin, capture_output=True,
+        # Never let ssh inherit our stdin: under the app it's the pipe held open for
+        # --exit-on-eof, and Windows' ssh.exe waits on it forever.
+        feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+        r = subprocess.run([*SSH, FRAME, remote], capture_output=True, **feed,
                            text=text, errors="replace" if text else None, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise Failure(f"Timed out talking to {FRAME}")
@@ -494,7 +497,7 @@ def adb_path():
 
 def adb(adb_bin, *args, timeout=20):
     try:
-        r = subprocess.run([adb_bin, *args], capture_output=True, text=True,
+        r = subprocess.run([adb_bin, *args], capture_output=True, stdin=subprocess.DEVNULL, text=True,
                            errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         raise Failure(f"adb {' '.join(args[-2:])} timed out")
@@ -609,7 +612,7 @@ class AdbTunnel:
             self._stop_ssh()
             for p in self.local:
                 try:
-                    subprocess.run([self.adb, "disconnect", self.serial(p)], capture_output=True, timeout=10)
+                    subprocess.run([self.adb, "disconnect", self.serial(p)], capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
                 except (subprocess.TimeoutExpired, OSError):
                     pass
         finally:
@@ -799,7 +802,7 @@ def push_file(path, dest="Downloads/"):
         else:
             # Modern scp uses SFTP, so the remote path isn't parsed by a shell.
             cmd = ["scp", *SSH[1:], "-r", str(path), f"{FRAME}:{dest}"]
-        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=3600)
+        r = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True, errors="replace", timeout=3600)
     except subprocess.TimeoutExpired:
         raise Failure(f"Copying {name} timed out")
     if r.returncode != 0:
@@ -1046,7 +1049,7 @@ def main():
     finally:
         # The master was started with -N, so it stays up until told to exit.
         if CONTROL:
-            subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True)
+            subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True, stdin=subprocess.DEVNULL)
         if _master and _master.poll() is None:
             _master.terminate()
         for proc in list(_live_tunnels):  # ADB forwards and video streams cut off mid-way

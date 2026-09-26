@@ -185,7 +185,7 @@ def clipboard_text():
     for cmd in cmds:
         if not shutil.which(cmd[0]):
             continue
-        r = subprocess.run(cmd, capture_output=True, timeout=10)
+        r = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
         if r.returncode == 0:
             text = r.stdout.decode("utf-8", errors="replace")
             return text[:-2] if WINDOWS and text.endswith("\r\n") else text
@@ -197,7 +197,7 @@ def clipboard_text():
 def ssh_hostname(alias):
     """The real host name an ssh alias points at (`ssh -G`), for non-SSH clients like RDP."""
     try:
-        out = subprocess.run(["ssh", "-G", alias], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["ssh", "-G", alias], capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return alias
     for line in out.splitlines():
