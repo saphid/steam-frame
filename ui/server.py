@@ -1047,6 +1047,10 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        # The app both closes stdin and sends SIGTERM on quit; a second signal
+        # mid-cleanup would abort it and leave the SSH master running.
+        if not frame_host.WINDOWS:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
         # The master was started with -N, so it stays up until told to exit.
         if CONTROL:
             subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True, stdin=subprocess.DEVNULL)

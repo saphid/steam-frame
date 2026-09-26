@@ -46,12 +46,21 @@ Linux backend uses Vulkan (`XR_USE_GRAPHICS_API_VULKAN`).
 [`scripts/build-chromium-xr.sh`](../scripts/build-chromium-xr.sh)
 cross-compiles arm64 Linux Chromium on an x64 Linux host. It doesn't need
 sudo: the arm64 sysroot comes from Chromium's own script. It needs about
-90 GB of disk. It shallow-fetches the CL ref, runs `gclient sync --no-history`,
-installs the sysroot, builds `chrome` with `symbol_level=0` and proprietary
-codecs, and packs `chromium-xr-arm64.tar.xz`. Progress is logged to
-`~/chromium-xr/stage`. The build aborts if `/` drops below 12 GB free.
+90 GB of disk. It shallow-fetches the CL ref (patchset 44), runs
+`gclient sync --no-history`, installs the sysroot, applies one extra seccomp
+fix (below), builds `chrome` with `symbol_level=0` and proprietary codecs, and
+packs `chromium-xr-arm64.tar.xz` (about 145 MB, GPU libraries included).
+Progress is logged to `~/chromium-xr/stage`. The build aborts if `/` drops
+below 12 GB free.
 
-First run: a 12-core, 31 GB x64 Linux box, started 2026-09-25.
+First run, 2026-09-25, on a 12-core, 31 GB x64 Linux box: 9 h 33 min for
+94,835 steps, giving Chromium 156.0.8071.0. A rebuild after a one-file change
+takes under a minute, plus about 4 minutes to repack.
+
+**The extra fix.** The CL's XR seccomp policy refuses `getsockopt`. SteamVR's
+client calls `getsockopt(SOL_SOCKET, SO_PEERCRED)` inside `xrCreateInstance`,
+so the XR process died with a seccomp crash (arm64 syscall 209). The script
+allows that one option.
 
 ## Running it on the Frame
 
@@ -59,24 +68,49 @@ First run: a 12-core, 31 GB x64 Linux box, started 2026-09-25.
 
 ```sh
 BUILD_HOST=my-linux-box scripts/chromium-xr.sh install  # your build host; scp, unpack to ~/chromium-xr
-scripts/chromium-xr.sh launch [URL]     # headset desktop, --enable-features=OpenXR
+scripts/chromium-xr.sh launch [URL]     # its own VR panel, --enable-features=OpenXR
 scripts/chromium-xr.sh check            # prints isSessionSupported('immersive-vr')
 ```
 
-It runs natively, not as a Flatpak, so the XR sandbox and SteamVR's IPC work
-as the CL expects. It uses its own profile (`~/.config/chromium-xr`) and
-DevTools on loopback port 9223, so it doesn't collide with the Flatpak's 9222.
+It runs natively, not as a Flatpak. `launch` opens it as its own panel on
+gamescope's X display, the same way as [`panel-on-frame.sh`](panels.md), so
+the Plasma desktop doesn't need to be open. It uses its own profile
+(`~/.config/chromium-xr`) and DevTools on loopback port 9223, so it doesn't
+collide with the Flatpak's 9222. When a page enters VR, Chrome asks
+**Allow VR?** in the browser panel; choose *Allow this time* or *Allow while
+visiting the site*.
 
-**Verified 2026-09-25:**
+**Seccomp is off.** `launch` passes `--disable-seccomp-filter-sandbox`. With
+the XR seccomp policy on, SteamVR's client reads `/proc/self/status` through
+Chrome's file broker and gets the broker's pid. SteamVR then binds the app to
+the wrong process ("Unable to init path manager: VRInitError_Init_Internal")
+and `xrCreateInstance` fails. The broker can't answer `/proc/self` for another
+process, so fixing this needs a change in Chromium's broker client or in the
+CL. The namespace sandbox stays on, but seccomp is off for every process, so
+use this profile for VR sites rather than everyday browsing.
 
-- Vulkan is there: Turnip (Mesa) on Adreno 750, API 1.4.359.
-- Unprivileged user namespaces work (`unshare -Ur true`), so Chromium's
-  namespace sandbox shouldn't need the setuid `chrome_sandbox`.
+**Verified 2026-09-26** (Frame BUILD_ID 20260922.6101926, SteamVR 2.17.10,
+this build):
 
-**Unverified (inferred):**
+- `isSessionSupported('immersive-vr')` is `true`. The WebXR samples page
+  shows "VR support detected".
+- `requestSession('immersive-vr')` succeeds after the prompt. With a WebGL
+  layer, the first XR frame has a viewer pose with 2 views and a
+  2880 × 1440 framebuffer (1440 × 1440 per eye).
+- SteamVR moves the app from `VRApplication_OpenXRInstance` to
+  `VRApplication_OpenXRScene` and gives it scene focus. `xrEndFrame` submits
+  both projection views, and the compositor receives the 2880 × 1440 scene.
+- The OpenXR runtime uses Vulkan (`XR_KHR_vulkan_enable2`). Chromium's own GPU
+  process uses ANGLE on GL, running on zink over Turnip Vulkan (Adreno 750);
+  Chromium's Vulkan backend is off. That doesn't stop the session.
+- Unprivileged user namespaces work (`unshare -Ur true`), so the namespace
+  sandbox runs without the setuid `chrome_sandbox`.
 
-- Chromium's GPU process may still fall back from Vulkan to GL on Turnip.
-- An immersive session started from a window on the nested desktop may not
-  hand over cleanly to the SteamVR compositor.
-- If the sandbox fails to start, `--no-sandbox` is the fallback for a first
-  test.
+**Not verified yet:** nobody was wearing the headset during the test, so
+SteamVR kept it in standby. The session stayed at
+`XR_SESSION_STATE_SYNCHRONIZED` (the page saw `visibilityState: "hidden"`)
+and only the first frame ran. Still open:
+
+- Whether the image shows up correctly in the headset, and at what frame rate.
+- Whether VR180 or 360 video players (DeoVR, DL8 embeds) play in 3D.
+- Controller and hand input in the session.
