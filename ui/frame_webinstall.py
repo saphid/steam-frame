@@ -373,14 +373,6 @@ def abort(conn):
             sock.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
-        if os.name == "nt":
-            # Windows doesn't wake a recv blocked in another thread on shutdown(),
-            # only when the handle closes. detach() first, so the owner's later
-            # close() can't close a handle the OS has since given to someone else.
-            try:
-                socket.close(sock.detach())
-            except OSError:
-                pass
 
 
 def download(p, dest_dir, progress=None, cancelled=None, connected=None):
