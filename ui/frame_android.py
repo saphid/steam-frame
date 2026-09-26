@@ -8,7 +8,9 @@ Lepton Development, which wipes its apps on exit. See docs/apks.md.
 
 Python stdlib only. CLI: python3 ui/frame_android.py {install APK|list|launch PKG|stop PKG|remove PKG|probe PKG}
 """
-import glob, json, os, re, shlex, subprocess, sys, threading, time, zipfile, zlib
+import glob, json, os, re, shlex, shutil, subprocess, sys, threading, time, zipfile, zlib
+
+import frame_host
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRAME = os.environ.get('FRAME_ALIAS', 'frame')
@@ -27,7 +29,9 @@ class FrameError(RuntimeError):
 
 def ssh(cmd, input=None, timeout=120):
     try:
-        p = subprocess.run(['ssh', *SSH_OPTS, FRAME, cmd], input=input, capture_output=True,
+        # No inherited stdin (see server.ssh): Windows' ssh.exe would wait on it.
+        feed = {'input': input} if input is not None else {'stdin': subprocess.DEVNULL}
+        p = subprocess.run(['ssh', *SSH_OPTS, FRAME, cmd], capture_output=True, **feed,
                            timeout=timeout, text=isinstance(input, str) or input is None)
     except subprocess.TimeoutExpired:
         raise FrameError(f'timed out talking to {FRAME}')
@@ -53,19 +57,17 @@ def game_id(shortcut_appid):
 
 
 def aapt2():
-    found = sorted(glob.glob(os.path.expanduser('~/.homebrew/share/android-commandlinetools/build-tools/*/aapt2'))
-                   + glob.glob('/opt/homebrew/share/android-commandlinetools/build-tools/*/aapt2')
-                   + glob.glob(os.path.expanduser('~/Library/Android/sdk/build-tools/*/aapt2')))
-    return found[-1] if found else None
+    exe = 'aapt2.exe' if frame_host.WINDOWS else 'aapt2'
+    found = sorted(f for d in frame_host.android_sdk_dirs() for f in glob.glob(os.path.join(d, 'build-tools', '*', exe)))
+    return found[-1] if found else shutil.which('aapt2')
 
 
 def apk_info(path):
     """Package, label, version, native ABIs and the best PNG icon inside the APK."""
     tool = aapt2()
     if not tool:
-        raise FrameError('aapt2 not found: brew install --cask android-commandlinetools, then '
-                         'sdkmanager "build-tools;36.0.0"')
-    out = subprocess.run([tool, 'dump', 'badging', path], capture_output=True, text=True).stdout
+        raise FrameError(f"aapt2 not found: {frame_host.install_hint('aapt2')}")
+    out = subprocess.run([tool, 'dump', 'badging', path], capture_output=True, stdin=subprocess.DEVNULL, text=True).stdout
     m = re.search(r"package: name='([^']+)'.*?versionName='([^']*)'", out)
     if not m:
         raise FrameError(f'not a readable APK: {os.path.basename(path)}')
@@ -105,14 +107,23 @@ def check_installable(info):
 _install_lock = threading.Lock()  # installs are rare; one at a time avoids every race
 
 
-def _rsync(src, dest, *extra, timeout=600):
+def _copy(src, dest, executable=False, timeout=600):
+    """Copy a local file to the Frame: rsync where installed (not on Windows), else scp."""
+    name = os.path.basename(src)
+    rsync = None if frame_host.WINDOWS else shutil.which('rsync')  # see server.push_file
+    if rsync:
+        cmd = ['rsync', '-a', *(['--chmod=u+x'] if executable else []),
+               '-e', shlex.join(['ssh', *SSH_OPTS]), src, f'{FRAME}:{dest}']
+    else:
+        cmd = ['scp', *SSH_OPTS, src, f'{FRAME}:{dest}']
     try:
-        subprocess.run(['rsync', '-a', *extra, '-e', 'ssh ' + ' '.join(SSH_OPTS), src, f'{FRAME}:{dest}'],
-                       check=True, capture_output=True, text=True, timeout=timeout)
+        subprocess.run(cmd, check=True, capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        raise FrameError(f'copying {os.path.basename(src)} to the Frame timed out')
+        raise FrameError(f'copying {name} to the Frame timed out')
     except subprocess.CalledProcessError as e:
-        raise FrameError(f'copying {os.path.basename(src)} to the Frame failed: {(e.stderr or "").strip()[-300:]}')
+        raise FrameError(f'copying {name} to the Frame failed: {(e.stderr or "").strip()[-300:]}')
+    if executable and not rsync:
+        ssh(f'chmod u+x {shlex.quote(dest)}')
 
 
 def _shortcut_ids():
@@ -146,8 +157,8 @@ def _install(apk_path, info, pkg, flatscreen, name, source):
     ok = False
     try:
         ssh(f'mkdir -p {d}')
-        _rsync(apk_path, f'{d}/app.apk.part')
-        _rsync(LAUNCHER, f'{d}/launch.sh', '--chmod=u+x', timeout=120)
+        _copy(apk_path, f'{d}/app.apk.part')
+        _copy(LAUNCHER, f'{d}/launch.sh', executable=True, timeout=120)
         icon = ''
         if info['icon_png']:
             ssh(f'cat > {d}/icon.png', input=info['icon_png'])

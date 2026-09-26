@@ -10,9 +10,12 @@ sys.path.insert(0, CATALOG)
 import build as catalog_build  # noqa: E402
 import reports  # noqa: E402
 import frame_android  # noqa: E402
+import frame_host  # noqa: E402
 import frame_compat_db as compat_db  # noqa: E402
 
-CACHE = (os.path.expanduser('~/Library/Caches/Frame Control/apk') if '.app/Contents/Resources' in CATALOG
+# Inside the installed app the catalogue folder is read-only, so downloads go to
+# the per-user cache (FRAME_CONTROL_APP is set by app/main.js).
+CACHE = (str(frame_host.cache_dir('apk')) if os.environ.get('FRAME_CONTROL_APP') or '.app/Contents/Resources' in CATALOG
          else os.path.join(CATALOG, 'data', 'cache'))
 APK_HOSTS = ('https://f-droid.org/repo/', 'https://f-droid.org/archive/')
 _lock = threading.Lock()

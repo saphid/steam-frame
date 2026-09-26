@@ -31,4 +31,26 @@ jobs:
       - name: Server tests
         run: python -m unittest discover -s tests -v
       - name: App syntax
-        run: node --check app/main.js && node --check app/build/make-icon.js
+        run: node --check app/main.js && node --check app/build/make-icon.js && node --check app/build/fetch-python.js
+
+  # The server runs on each desktop OS the app ships for. Windows uses the same
+  # Python version the app bundles (app/build/fetch-python.js).
+  server-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python: "3.12"
+          - os: macos-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Server tests
+        run: python -m unittest discover -s tests -v

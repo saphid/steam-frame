@@ -136,6 +136,8 @@ class ServerGuards(unittest.TestCase):
 
 
 class StatusProbe(unittest.TestCase):
+    # frame_status.py only ever runs on the Frame (Linux); it needs os.statvfs.
+    @unittest.skipIf(os.name == "nt", "Frame-side script; POSIX only")
     def test_runs_off_device_and_prints_one_json_object(self):
         # The probe runs on the Frame; elsewhere every field must degrade to null/empty.
         out = subprocess.run([sys.executable, str(ROOT / "ui" / "frame_status.py")],

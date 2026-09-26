@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Frame Control: a small local web UI for managing the Steam Frame from the Mac.
+"""Frame Control: a small local web UI for managing the Steam Frame from a computer.
 
-Stdlib only. Listens on 127.0.0.1 and talks to the headset through the `frame`
-SSH alias set up by scripts/connect.sh, reusing the scripts in ../scripts.
+Stdlib only; runs on macOS, Linux and Windows (differences live in frame_host.py).
+Listens on 127.0.0.1 and talks to the headset through the `frame` SSH alias set
+up by scripts/connect.sh or ui/frame_connect.py.
 
-Usage: ui/server.py [--port 47810]   (normally started by scripts/frame-ui.sh)
+Usage: ui/server.py [--port 47810] [--exit-on-eof]   (normally started by the app)
 Env:   FRAME_ALIAS (default frame)
 """
 import argparse
+import base64
 import http.client
 import json
 import os
+import queue
 import re
-import select
 import shlex
 import shutil
 import signal
@@ -26,19 +28,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import frame_android
-import frame_catalog
-import frame_store
+# Windows' embedded Python (bundled with the app) doesn't put the script's own
+# folder on sys.path, so add it for the sibling modules below.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import frame_android  # noqa: E402
+import frame_catalog  # noqa: E402
+import frame_host  # noqa: E402
+import frame_store  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-SCRIPTS = HERE.parent / "scripts"
 FRAME = os.environ.get("FRAME_ALIAS", "frame")
-# Reuse one SSH connection for the frequent status/screenshot calls. /tmp, not
-# $TMPDIR: macOS's per-user temp path overflows the unix socket path limit.
-CONTROL = f"/tmp/frame-ui-{os.getuid()}-%C"
-MUX = ["ssh", "-o", "BatchMode=yes", "-o", f"ControlPath={CONTROL}"]
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", FRAME):
+    sys.exit(f"FRAME_ALIAS must be a plain host alias, not {FRAME!r}")
+# Reuse one SSH connection for the frequent status/screenshot calls, where ssh
+# supports it (not on Windows: there every command connects on its own).
+CONTROL = frame_host.control_path()
+MUX = ["ssh", "-o", "BatchMode=yes", *(["-o", f"ControlPath={CONTROL}"] if CONTROL else [])]
 # Commands use the master when it's up and connect directly when it isn't.
-SSH = [*MUX, "-o", "ControlMaster=no", "-o", "ConnectTimeout=5"]
+SSH = [*MUX, *(["-o", "ControlMaster=no"] if CONTROL else []), "-o", "ConnectTimeout=5"]
 
 # Android helpers share the multiplexed connection when it's up.
 frame_android.SSH_OPTS = SSH[1:]
@@ -82,9 +90,12 @@ def ensure_master():
     No ConnectTimeout here: with it, OpenSSH's master takes ~5s to open its socket.
     """
     global _master
+    if not CONTROL:
+        return
+
     def up():
         try:
-            return subprocess.run([*MUX, "-O", "check", FRAME], capture_output=True,
+            return subprocess.run([*MUX, "-O", "check", FRAME], capture_output=True, stdin=subprocess.DEVNULL,
                                   timeout=5).returncode == 0
         except subprocess.TimeoutExpired:
             return False
@@ -97,7 +108,7 @@ def ensure_master():
         _master = subprocess.Popen([*MUX, "-o", "ControlMaster=yes", "-o", "ServerAliveInterval=5",
                                     "-o", "ServerAliveCountMax=2", "-N", FRAME],
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, start_new_session=True)
+                                   stderr=subprocess.DEVNULL, **frame_host.DETACHED)
         for _ in range(60):
             if up() or _master.poll() is not None:
                 return
@@ -107,7 +118,10 @@ def ensure_master():
 def ssh(remote, *, stdin=None, timeout=30, text=True):
     try:
         ensure_master()
-        r = subprocess.run([*SSH, FRAME, remote], input=stdin, capture_output=True,
+        # Never let ssh inherit our stdin: under the app it's the pipe held open for
+        # --exit-on-eof, and Windows' ssh.exe waits on it forever.
+        feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+        r = subprocess.run([*SSH, FRAME, remote], capture_output=True, **feed,
                            text=text, errors="replace" if text else None, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise Failure(f"Timed out talking to {FRAME}")
@@ -119,40 +133,16 @@ def ssh(remote, *, stdin=None, timeout=30, text=True):
     return r.stdout
 
 
-def script(name, *args, stdin=None, timeout=900):
-    """Run one of ../scripts and return its combined output."""
-    try:
-        r = subprocess.run([str(SCRIPTS / name), *args], input=stdin, text=True, timeout=timeout,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           env={**os.environ, "FRAME_ALIAS": FRAME})
-    except subprocess.TimeoutExpired:
-        raise Failure(f"{name} timed out")
-    out = strip_ansi(r.stdout).strip()
-    if r.returncode != 0:
-        raise Failure(out or f"{name} exited {r.returncode}")
-    return out
-
-
 def strip_ansi(s):
     return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\r", "", s)
 
 
-def terminal(command):
-    """Open Terminal.app running `command` (for anything needing a password)."""
-    as_str = command.replace("\\", "\\\\").replace('"', '\\"')
-    r = subprocess.run(["osascript", "-e", 'tell application "Terminal"',
-                        "-e", f'do script "{as_str}"', "-e", "activate", "-e", "end tell"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        # Usually macOS Automation consent for Terminal was denied.
-        raise Failure(f"Couldn't open Terminal: {r.stderr.strip()}", 500)
-
-
-def open_app(name, fallback_url):
-    if subprocess.run(["open", "-a", name], capture_output=True).returncode == 0:
-        return f"Opened {name}"
-    subprocess.run(["open", fallback_url])
-    return f"{name} isn't installed; opened its download page"
+def terminal(argv):
+    """Open a terminal window running argv (for anything needing a password)."""
+    try:
+        return frame_host.open_terminal(argv)
+    except frame_host.HostError as e:
+        raise Failure(str(e), 500)
 
 
 # ---- actions ---------------------------------------------------------------
@@ -259,7 +249,7 @@ def save_shots(body):
         try:
             try:
                 r = subprocess.run(["scp", "-p", *SSH[1:], *(f"{FRAME}:{p}" for p in todo), str(incoming)],
-                                   capture_output=True, text=True, timeout=300)
+                                   capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=300)
             except subprocess.TimeoutExpired:
                 raise Failure("Copying screenshots timed out")
             if r.returncode != 0:
@@ -368,13 +358,44 @@ def set_volume(body):
     return {"message": "Volume updated"}
 
 
+# Runs on the Frame, clipboard text on stdin. Verified 2026-09-25 (SteamOS 0.3.0
+# vr, build 20260922): the headset desktop is a nested Plasma Wayland session
+# inside gamescope with its own D-Bus bus, and wl-copy/xclip are not installed.
+# Klipper (org.kde.klipper, served by plasmashell) is reachable with qdbus6, so
+# borrow plasmashell's bus address. Same as scripts/paste-to-frame.sh.
+PASTE = r"""set -u
+text=$(cat; printf x); text=${text%x}
+pid=$(pgrep -u "$(id -u)" -x plasmashell | head -n 1)
+if [ -z "$pid" ]; then
+  echo "plasmashell is not running: open the desktop in the headset first." >&2
+  exit 2
+fi
+bus=$(tr '\0' '\n' < "/proc/$pid/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+if DBUS_SESSION_BUS_ADDRESS=$bus qdbus6 org.kde.klipper /klipper \
+     org.kde.klipper.klipper.setClipboardContents "$text" >/dev/null; then
+  echo "copied via Klipper (${#text} chars)"
+else
+  echo "Klipper call failed (bus: ${bus:-none})" >&2
+  exit 2
+fi
+"""
+# base64 keeps the script intact through every local shell's quoting rules.
+PASTE_CMD = 'bash -c "$(echo %s | base64 -d)"' % base64.b64encode(PASTE.encode()).decode()
+
+
 def clipboard(body):
-    if body.get("fromMac"):
-        return {"message": script("paste-to-frame.sh", timeout=30)}
-    text = body.get("text")
-    if not isinstance(text, str) or not text:
-        raise Failure("nothing to send", 400)
-    return {"message": script("paste-to-frame.sh", "-", stdin=text, timeout=30)}
+    if body.get("fromMac") or body.get("fromComputer"):
+        try:
+            text = frame_host.clipboard_text()
+        except frame_host.HostError as e:
+            raise Failure(str(e), 500)
+        if not text:
+            raise Failure("The clipboard is empty (or holds something other than text)", 400)
+    else:
+        text = body.get("text")
+        if not isinstance(text, str) or not text:
+            raise Failure("nothing to send", 400)
+    return {"message": ssh(PASTE_CMD, stdin=text, timeout=30).strip()}
 
 
 def flatpak(body):
@@ -382,7 +403,11 @@ def flatpak(body):
     if not FLATPAK_ID.match(app):
         raise Failure("bad Flatpak app ID", 400)
     if action == "install":
-        return {"message": script("install-apps.sh", app)}
+        # Per-user, so it survives SteamOS updates and needs no sudo (as install-apps.sh).
+        ssh("flatpak remote-add --user --if-not-exists flathub "
+            "https://dl.flathub.org/repo/flathub.flatpakrepo && "
+            f"flatpak install --user -y --noninteractive flathub {shlex.quote(app)}", timeout=900)
+        return {"message": f"Installed {app}"}
     if action == "uninstall":
         out = ssh(f"flatpak uninstall --user -y -- {shlex.quote(app)}", timeout=300)
         return {"message": strip_ansi(out).strip() or f"Removed {app}"}
@@ -391,25 +416,25 @@ def flatpak(body):
 
 def open_thing(body):
     what = body.get("what")
-    alias = shlex.quote(FRAME)
-    if what == "terminal":
-        terminal(f"ssh {alias}")
-        return {"message": "Opened an SSH session in Terminal"}
-    if what in ("reboot", "poweroff", "suspend"):
-        # logind answers "challenge" over SSH, so sudo (and the password) is needed.
-        terminal(f"ssh -t {alias} sudo systemctl {what}")
-        return {"message": f"Confirm with the Developer Mode password in Terminal to {what}"}
-    if what == "steamlink":
-        return {"message": open_app("Steam Link", "https://store.steampowered.com/remoteplay")}
-    if what == "rdp":
-        return {"message": open_app("Windows App", "https://apps.apple.com/app/windows-app/id1295203466")}
-    if what == "sftp":
-        terminal(f"sftp {alias}")
-        return {"message": "Opened an SFTP session in Terminal"}
-    if what == "shots":
-        SHOTS_DIR.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["open", str(SHOTS_DIR)])
-        return {"message": "Opened ~/Pictures/SteamFrame in Finder"}
+    try:
+        if what == "terminal":
+            return {"message": f"Opened an SSH session in {terminal(['ssh', FRAME])}"}
+        if what in ("reboot", "poweroff", "suspend"):
+            # logind answers "challenge" over SSH, so sudo (and the password) is needed.
+            where = terminal(["ssh", "-t", FRAME, "sudo", "systemctl", what])
+            return {"message": f"Confirm with the Developer Mode password in {where} to {what}"}
+        if what == "steamlink":
+            return {"message": frame_host.open_steam_link()}
+        if what == "rdp":
+            return {"message": frame_host.open_rdp(FRAME)}
+        if what == "sftp":
+            return {"message": f"Opened an SFTP session in {terminal(['sftp', FRAME])}"}
+        if what == "shots":
+            SHOTS_DIR.mkdir(parents=True, exist_ok=True)
+            frame_host.open_path(SHOTS_DIR)
+            return {"message": f"Opened {SHOTS_DIR} in {frame_host.FILE_MANAGER}"}
+    except frame_host.HostError as e:
+        raise Failure(str(e), 500)
     raise Failure("unknown target", 400)
 
 
@@ -438,7 +463,7 @@ def android(body):
                                          runtime=body.get("runtime") or "instance",
                                          label=body.get("label"), source=body.get("source"))
             name = r.get("label") or pkg
-            where = "" if frame_catalog.compat_db.shared() else " on this Mac"
+            where = "" if frame_catalog.compat_db.shared() else " on this computer"
             return {"message": f"Saved your report for {name}{where}", "report": r}
     except frame_android.FrameError as e:
         raise Failure(str(e))
@@ -464,16 +489,15 @@ _live_tunnels = set()  # ssh processes (ADB forwards, live video) to kill if the
 
 
 def adb_path():
-    for cand in (os.environ.get("ADB"), shutil.which("adb"), "/opt/homebrew/bin/adb",
-                 str(Path.home() / ".homebrew/bin/adb"), "/usr/local/bin/adb"):
-        if cand and os.access(cand, os.X_OK):
-            return cand
-    raise Failure("adb missing on the Mac: brew install android-platform-tools", 500)
+    try:
+        return frame_host.adb()
+    except frame_host.HostError as e:
+        raise Failure(str(e), 500)
 
 
 def adb(adb_bin, *args, timeout=20):
     try:
-        r = subprocess.run([adb_bin, *args], capture_output=True, text=True,
+        r = subprocess.run([adb_bin, *args], capture_output=True, stdin=subprocess.DEVNULL, text=True,
                            errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         raise Failure(f"adb {' '.join(args[-2:])} timed out")
@@ -490,7 +514,7 @@ def free_local_port():
 
 
 class AdbTunnel:
-    """SSH forwards from Mac loopback to Frame ADB ports, plus adb connections.
+    """SSH forwards from local loopback to Frame ADB ports, plus adb connections.
 
     `with AdbTunnel([5555, 5557]) as t: t.shell(5555, "wm size")`. On exit it
     disconnects adb and kills the ssh process, whatever happened inside.
@@ -588,7 +612,7 @@ class AdbTunnel:
             self._stop_ssh()
             for p in self.local:
                 try:
-                    subprocess.run([self.adb, "disconnect", self.serial(p)], capture_output=True, timeout=10)
+                    subprocess.run([self.adb, "disconnect", self.serial(p)], capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
                 except (subprocess.TimeoutExpired, OSError):
                     pass
         finally:
@@ -742,6 +766,50 @@ POST = {"/api/android/display": android_display, "/api/android": android,"/api/l
 
 # ---- HTTP ------------------------------------------------------------------
 
+def _pipe_reader(pipe):
+    """Chunks from a pipe via a thread; select() can't wait on pipes on Windows."""
+    chunks = queue.Queue()  # unbounded: the pump never blocks, so it ends at EOF
+
+    def pump():
+        try:
+            while True:
+                chunk = pipe.read1(1 << 16) if hasattr(pipe, "read1") else os.read(pipe.fileno(), 1 << 16)
+                chunks.put(chunk)
+                if not chunk:
+                    return
+        except (OSError, ValueError):
+            chunks.put(b"")
+
+    threading.Thread(target=pump, daemon=True).start()
+    return chunks
+
+
+def _next_chunk(chunks, timeout):
+    """The next chunk, or b"" at end of stream or after `timeout` seconds of silence."""
+    try:
+        return chunks.get(timeout=timeout)
+    except queue.Empty:
+        return b""
+
+
+def push_file(path, dest="Downloads/"):
+    """Copy a file to the Frame (as scripts/push.sh): rsync where both ends have it, else scp."""
+    name = Path(path).name
+    try:
+        # Not on Windows: a Windows rsync (cwRsync, MSYS2) wouldn't take our POSIX -e quoting.
+        if not frame_host.WINDOWS and shutil.which("rsync") and ssh("command -v rsync >/dev/null && echo yes || true").strip() == "yes":
+            cmd = ["rsync", "-a", "-e", shlex.join(SSH), str(path), f"{FRAME}:{shlex.quote(dest)}"]
+        else:
+            # Modern scp uses SFTP, so the remote path isn't parsed by a shell.
+            cmd = ["scp", *SSH[1:], "-r", str(path), f"{FRAME}:{dest}"]
+        r = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True, errors="replace", timeout=3600)
+    except subprocess.TimeoutExpired:
+        raise Failure(f"Copying {name} timed out")
+    if r.returncode != 0:
+        raise Failure(strip_ansi(r.stderr or r.stdout).strip() or f"copy exited {r.returncode}")
+    return f"Sent {name} to ~/{dest}"
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "FrameControl/1"
     timeout = 60  # per socket operation, so a stalled client can't hold a thread
@@ -788,6 +856,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 self.send_bytes((HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+            elif path == "/api/host":
+                self.send_json({"os": frame_host.NAME, "fileManager": frame_host.FILE_MANAGER,
+                                "computer": "Mac" if frame_host.MAC else "PC"})
             elif path == "/api/android":
                 ensure_master()
                 self.send_json({"apps": frame_android.list_apps()})
@@ -869,11 +940,10 @@ class Handler(BaseHTTPRequestHandler):
                 old, _stream_proc = _stream_proc, proc
             if old and old.poll() is None:
                 old.terminate()
-            fd = proc.stdout.fileno()
+            chunks = _pipe_reader(proc.stdout)
             # Nothing is sent until the first bytes arrive, so a failure to
             # start still comes back as a JSON error.
-            ready, _, _ = select.select([fd], [], [], 20)
-            first = os.read(fd, 1 << 16) if ready else b""
+            first = _next_chunk(chunks, 20)
             if not first:
                 proc.kill()
                 proc.wait()
@@ -894,8 +964,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                     # A stalled headset view ends the stream rather than
                     # holding this thread (and the page) forever.
-                    ready, _, _ = select.select([fd], [], [], STREAM_STALL)
-                    chunk = os.read(fd, 1 << 16) if ready else b""
+                    chunk = _next_chunk(chunks, STREAM_STALL)
             except OSError:
                 pass  # the page stopped watching (or stopped reading); the body has started, so no JSON
         finally:
@@ -952,7 +1021,7 @@ class Handler(BaseHTTPRequestHandler):
                 except frame_android.FrameError as e:
                     raise Failure(str(e), 400)
                 return {"message": f"Installed {m['label']} as its own app in the Steam library", "app": m}
-            return {"message": script("push.sh", str(dest))}
+            return {"message": push_file(dest)}
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -960,9 +1029,18 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 47810)))
+    ap.add_argument("--exit-on-eof", action="store_true",
+                    help="stop cleanly when stdin closes (the app closes it on quit; "
+                         "Windows has no SIGTERM to catch)")
     args = ap.parse_args()
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt))
+    if not frame_host.WINDOWS:
+        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt))
+    if args.exit_on_eof:
+        def watch_stdin():
+            sys.stdin.buffer.read()
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
+        threading.Thread(target=watch_stdin, daemon=True).start()
     print(f"Frame Control on http://127.0.0.1:{args.port}  (alias: {FRAME}; Ctrl-C to stop)", flush=True)
     try:
         httpd.serve_forever()
@@ -970,7 +1048,8 @@ def main():
         pass
     finally:
         # The master was started with -N, so it stays up until told to exit.
-        subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True)
+        if CONTROL:
+            subprocess.run([*MUX, "-O", "exit", FRAME], capture_output=True, stdin=subprocess.DEVNULL)
         if _master and _master.poll() is None:
             _master.terminate()
         for proc in list(_live_tunnels):  # ADB forwards and video streams cut off mid-way

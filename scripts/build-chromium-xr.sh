@@ -1,6 +1,7 @@
 #!/bin/bash
 # Linux-side (x64 host): cross-compile arm64 Chromium with the Linux OpenXR CLs
-# (8441736 + 8132979, bug 506004811) so WebXR immersive-vr works on the Frame.
+# (8441736 + 8132979, bug 506004811), plus a one-option seccomp fix, so WebXR
+# immersive-vr works on the Frame.
 # Needs ~90 GB free, no sudo. Takes hours; run it detached on the build host:
 #   scp scripts/build-chromium-xr.sh buildhost:chromium-xr/build.sh
 #   ssh buildhost 'cd ~/chromium-xr && tmux new -d -s chromium-xr "./build.sh > build.log 2>&1"'
@@ -43,6 +44,55 @@ gclient runhooks
 src/build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
 guard
 cd src
+# CL 8441736's XR seccomp policy refuses getsockopt, and SteamVR's IPC client
+# calls getsockopt(SO_PEERCRED) inside xrCreateInstance, which crashes the XR
+# process (verified on the Frame 2026-09-26). Allow only that option.
+IFS= read -r -d '' PEERCRED_PATCH <<'P' || true
+diff --git a/sandbox/policy/linux/bpf_xr_policy_linux.cc b/sandbox/policy/linux/bpf_xr_policy_linux.cc
+index 435e13d396..297453f582 100644
+--- a/sandbox/policy/linux/bpf_xr_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_xr_policy_linux.cc
+@@ -11,6 +11,7 @@
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ 
++using sandbox::bpf_dsl::AllOf;
+ using sandbox::bpf_dsl::Allow;
+ using sandbox::bpf_dsl::Arg;
+ using sandbox::bpf_dsl::Error;
+@@ -27,8 +28,8 @@ XrProcessPolicy::~XrProcessPolicy() = default;
+ ResultExpr XrProcessPolicy::EvaluateSyscall(int system_call_number) const {
+   switch (system_call_number) {
+     // The runtime reaches its compositor over an AF_UNIX socket and passes fds
+-    // with SCM_RIGHTS, neither of which the GPU policy allows. get/setsockopt
+-    // stay disallowed; add a narrow level/optname restriction if ever needed.
++    // with SCM_RIGHTS, neither of which the GPU policy allows. setsockopt
++    // stays disallowed; getsockopt is limited to SO_PEERCRED below.
+ #if defined(__NR_getpeername)
+     case __NR_getpeername:
+ #endif
+@@ -49,6 +50,16 @@ ResultExpr XrProcessPolicy::EvaluateSyscall(int system_call_number) const {
+     case __NR_get_robust_list:
+ #endif
+       return Allow();
++#if defined(__NR_getsockopt)
++    case __NR_getsockopt: {
++      // SteamVR's IPC client checks who is on the other end of its socket
++      // with SO_PEERCRED. Nothing else is readable.
++      const Arg<int> level(1);
++      const Arg<int> optname(2);
++      return If(AllOf(level == SOL_SOCKET, optname == SO_PEERCRED), Allow())
++          .Else(Error(EPERM));
++    }
++#endif
+ #if defined(__NR_kill)
+     case __NR_kill: {
+       // SteamVR probes its sibling processes for liveness with kill(pid, 0).
+P
+if ! printf '%s\n' "$PEERCRED_PATCH" | git apply --reverse --check 2>/dev/null; then
+  printf '%s\n' "$PEERCRED_PATCH" | git apply
+  stage "applied SO_PEERCRED patch"
+fi
 mkdir -p out/XR
 cat > out/XR/args.gn <<'A'
 target_os = "linux"

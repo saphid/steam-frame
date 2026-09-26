@@ -1,6 +1,6 @@
-// Frame Control as a Mac app: starts ui/server.py on a free loopback port and
-// shows it in a native window. The server does all the work over the `frame`
-// SSH alias; this file only hosts it.
+// Frame Control as a desktop app (macOS, Windows, Linux): starts ui/server.py on
+// a free loopback port and shows it in a native window. The server does all the
+// work over the `frame` SSH alias; this file only hosts it.
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
 const { execFile, spawn } = require("child_process");
 const { promisify } = require("util");
@@ -12,11 +12,15 @@ const path = require("path");
 
 const run = promisify(execFile);
 
-// Packaged: Contents/Resources/{ui,scripts}. Dev: the repo checkout.
+const IS_MAC = process.platform === "darwin";
+const IS_WIN = process.platform === "win32";
+
+// Packaged: <resources>/{ui,scripts,python}. Dev: the repo checkout.
 const ROOT = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
 const SERVER = path.join(ROOT, "ui", "server.py");
 const SCRIPTS = path.join(ROOT, "scripts");
-const LOG_DIR = path.join(os.homedir(), "Library", "Logs", "Frame Control");
+const LOG_DIR = IS_MAC ? path.join(os.homedir(), "Library", "Logs", "Frame Control")
+                       : path.join(app.getPath("userData"), "logs");
 const LOG = path.join(LOG_DIR, "server.log");
 const BG = "#0d1117";
 const FRAME = process.env.FRAME_ALIAS || "frame";
@@ -25,15 +29,18 @@ let server = null;
 let url = null;
 let win = null;
 let quitting = false;
+let python = null;
 
 // Apps launched from Finder get PATH=/usr/bin:/bin:/usr/sbin:/sbin, which misses
-// Homebrew's python3, rsync and adb. Take PATH from the login shell instead.
+// Homebrew's python3, rsync and adb (desktop launchers on Linux can be as bare).
+// Take PATH from the login shell instead. Windows has no login shell to ask.
 // Runs asynchronously so a slow shell profile can't freeze the window.
 let cachedPath = null;
 async function loginPath() {
+  if (IS_WIN) return process.env.PATH || "";
   if (cachedPath) return cachedPath;
-  const shellPath = os.userInfo().shell || process.env.SHELL || "/bin/zsh";
-  const extra = ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".homebrew", "bin")];
+  const shellPath = os.userInfo().shell || process.env.SHELL || (IS_MAC ? "/bin/zsh" : "/bin/sh");
+  const extra = IS_MAC ? ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".homebrew", "bin")] : [];
   let fromShell = "";
   try {
     const { stdout } = await run(shellPath, ["-ilc", 'printf "\\n__PATH__%s__PATH__" "$PATH"'],
@@ -46,18 +53,39 @@ async function loginPath() {
   return joined;
 }
 
+// The Windows build bundles Python; elsewhere use the system's python3 (3.8+).
 async function findPython(env) {
-  for (const dir of env.PATH.split(":")) {
-    const p = path.join(dir, "python3");
+  const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3"];
+  const candidates = [];
+  if (IS_WIN) candidates.push(path.join(ROOT, "python", "python.exe"));
+  for (const dir of env.PATH.split(path.delimiter)) {
+    // The WindowsApps "python.exe" is a stub that opens the Microsoft Store.
+    if (!dir || (IS_WIN && /\\WindowsApps\\?$/i.test(dir))) continue;
+    for (const name of names) candidates.push(path.join(dir, name));
+  }
+  for (const p of candidates) {
     try {
       fs.accessSync(p, fs.constants.X_OK);
-      // /usr/bin/python3 is a stub until the Command Line Tools are installed.
-      await run(p, ["-c", "import http.server"], { timeout: 10000, env });
+      // /usr/bin/python3 on macOS is a stub until the Command Line Tools are installed.
+      await run(p, ["-c", "import http.server, sys; assert sys.version_info >= (3, 8)"],
+                { timeout: 10000, env, windowsHide: true });
       return p;
     } catch {}
   }
   return null;
 }
+
+async function hasSsh(env) {
+  try { await run("ssh", ["-V"], { timeout: 5000, env, windowsHide: true }); return true; } catch { return false; }
+}
+
+const PYTHON_HELP = IS_MAC
+  ? "Install the Xcode Command Line Tools (xcode-select --install) or Homebrew's python, then reopen the app."
+  : IS_WIN ? "The bundled Python is missing; reinstall Frame Control."
+  : "Install Python 3.8 or later from your distribution (e.g. sudo apt install python3), then reopen the app.";
+const SSH_HELP = IS_WIN
+  ? "Turn on Windows' OpenSSH client: Settings → System → Optional features → Add a feature → OpenSSH Client."
+  : "Install the OpenSSH client (e.g. sudo apt install openssh-client).";
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -80,17 +108,20 @@ function ping(target) {
 }
 
 async function startServer() {
-  const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" };
-  const python = await findPython(env);
-  if (!python) {
-    throw new Error("Frame Control needs python3. Install the Xcode Command Line Tools "
-                    + "(xcode-select --install) or Homebrew's python, then reopen the app.");
-  }
+  const env = { ...process.env, PATH: await loginPath(), PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1",
+                PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", FRAME_CONTROL_APP: "1" };
+  python = await findPython(env);
+  if (!python) throw new Error(`Frame Control needs Python 3.8 or later. ${PYTHON_HELP}`);
+  if (!await hasSsh(env)) throw new Error(`Frame Control needs the ssh command. ${SSH_HELP}`);
   const port = await freePort();
   fs.mkdirSync(LOG_DIR, { recursive: true });
   const log = fs.openSync(LOG, "a");
   fs.writeSync(log, `\n--- ${new Date().toISOString()} ${python} ${SERVER} --port ${port}\n`);
-  const child = spawn(python, [SERVER, "--port", String(port)], { env, stdio: ["ignore", log, log] });
+  // stdin stays open while the app runs; the server exits cleanly when it closes.
+  // -X utf8: the bundled Windows Python ignores PYTHON* variables (isolated mode).
+  const child = spawn(python, ["-X", "utf8", SERVER, "--port", String(port), "--exit-on-eof"],
+                      { env, stdio: ["pipe", log, log], windowsHide: true });
+  child.stdin.on("error", () => {});
   fs.closeSync(log);
   server = child;
   let exited = null;
@@ -112,13 +143,20 @@ async function startServer() {
     await new Promise((r) => setTimeout(r, 100));
   }
   if (server === child) server = null;
-  child.kill("SIGTERM");
+  endServer(child);
   throw new Error(`The server didn't start within 10 seconds. See ${LOG}.`);
 }
 
+// Closing stdin lets server.py close its SSH connections and exit (the only clean
+// way on Windows); SIGTERM does the same elsewhere.
+function endServer(child) {
+  try { child.stdin.end(); } catch {}
+  if (!IS_WIN) child.kill("SIGTERM");
+  setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill(); }, 5000).unref();
+}
+
 function stopServer() {
-  // server.py handles SIGTERM by closing its shared SSH connection.
-  if (server) server.kill("SIGTERM");
+  if (server) endServer(server);
 }
 
 function errorPage(message) {
@@ -139,12 +177,12 @@ async function restartServer() {
   const old = server;
   server = null;
   url = null;
-  if (old) old.kill("SIGTERM");
+  if (old) endServer(old);
   await load();
 }
 
-// The page's sticky header becomes the title bar, clear of the traffic lights.
-const CHROME_CSS = `
+// On macOS the page's sticky header becomes the title bar, clear of the traffic lights.
+const CHROME_CSS = IS_MAC && `
   header { padding-left: 92px !important; -webkit-app-region: drag; user-select: none; }
   header a, header button, header input, header .chip { -webkit-app-region: no-drag; }
 `;
@@ -183,8 +221,8 @@ async function firstRunCheck() {
     type: "info",
     message: "Connect to your Steam Frame",
     detail: `There's no "${FRAME}" SSH alias yet. On the Frame, turn on Steam Settings → System → `
-          + "Enable Developer Mode, then Developer → Set User Password. Then run the setup script: it finds the "
-          + "headset, creates a key, and asks for that password once in Terminal.",
+          + "Enable Developer Mode, then Developer → Set User Password. Then run the setup: it finds the "
+          + "headset, creates a key, and asks for that password once in a terminal window.",
     buttons: ["Set Up Connection…", "Later"],
     defaultId: 0, cancelId: 1,
   });
@@ -195,11 +233,12 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1400, height: 950, minWidth: 760, minHeight: 560,
     title: "Frame Control", backgroundColor: BG, show: false,
-    titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 26 },
+    ...(IS_MAC ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 26 } }
+               : { icon: path.join(__dirname, "build", "icon.png") }),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.once("ready-to-show", () => win.show());
-  win.webContents.on("did-finish-load", () => win.webContents.insertCSS(CHROME_CSS));
+  if (CHROME_CSS) win.webContents.on("did-finish-load", () => win.webContents.insertCSS(CHROME_CSS));
   // External links open in the default browser; the app never navigates away.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:\/\//.test(target)) shell.openExternal(target);
@@ -212,36 +251,45 @@ function createWindow() {
   load();
 }
 
-// Runs in Terminal because ssh-copy-id asks for the Developer Mode password.
-function runInTerminal(command) {
-  const quoted = command.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  execFile("osascript", ["-e", 'tell application "Terminal"', "-e", `do script "${quoted}"`,
-                         "-e", "activate", "-e", "end tell"], (err) => {
-    if (err) dialog.showErrorBox("Couldn't open Terminal", String(err.message || err));
-  });
+// Opens a terminal window (Terminal, a Linux terminal emulator or a console) via
+// ui/frame_host.py, which the server uses too: setup and power actions ask for the
+// Developer Mode password there.
+async function runInTerminal(argv) {
+  try {
+    const env = { ...process.env, PATH: await loginPath() };
+    const py = python || await findPython(env);
+    if (!py) throw new Error(`Python 3.8 or later is needed. ${PYTHON_HELP}`);
+    await run(py, [path.join(ROOT, "ui", "frame_host.py"), "terminal", "--", ...argv],
+              { env, timeout: 15000, windowsHide: true });
+  } catch (err) {
+    dialog.showErrorBox("Couldn't open a terminal", String((err.stderr || err.message || err)).trim());
+  }
 }
 
-const sh = (s) => `'${s.replace(/'/g, "'\\''")}'`;
-
-function setUpConnection() {
-  runInTerminal(`env ${sh(`FRAME_ALIAS=${FRAME}`)} zsh ${sh(path.join(SCRIPTS, "connect.sh"))}`);
+async function setUpConnection() {
+  const alias = `FRAME_ALIAS=${FRAME}`;
+  if (IS_MAC) return runInTerminal(["env", alias, "zsh", path.join(SCRIPTS, "connect.sh")]);
+  const py = python || await findPython({ ...process.env, PATH: await loginPath() });
+  const setup = [py || "python3", path.join(ROOT, "ui", "frame_connect.py")];
+  // A new console inherits our environment on Windows; Linux terminals may not.
+  runInTerminal(IS_WIN ? setup : ["env", alias, ...setup]);
 }
 
 function buildMenu() {
   const template = [
-    { role: "appMenu" },
+    ...(IS_MAC ? [{ role: "appMenu" }] : []),
     { role: "fileMenu" },
     { role: "editMenu" },
     {
       label: "Frame",
       submenu: [
         { label: "Set Up Connection…", click: setUpConnection },
-        { label: "Open SSH in Terminal", click: () => runInTerminal(`ssh ${sh(FRAME)}`) },
+        { label: IS_MAC ? "Open SSH in Terminal" : "Open SSH in a Terminal", click: () => runInTerminal(["ssh", FRAME]) },
         { type: "separator" },
         { label: "Open in Browser", click: () => url && shell.openExternal(url) },
         { label: "Restart Server", click: () => win ? restartServer() : createWindow() },
         { label: "Show Server Log", click: () => shell.openPath(fs.existsSync(LOG) ? LOG : LOG_DIR) },
-        { label: "Reveal Helper Scripts", click: () => shell.openPath(SCRIPTS) },
+        ...(IS_WIN ? [] : [{ label: "Reveal Helper Scripts", click: () => shell.openPath(SCRIPTS) }]),
       ],
     },
     {
@@ -253,7 +301,7 @@ function buildMenu() {
         { type: "separator" }, { role: "togglefullscreen" },
       ],
     },
-    { role: "windowMenu" },
+    ...(IS_MAC ? [{ role: "windowMenu" }] : []),
     {
       role: "help",
       submenu: [{ label: "Project on GitHub", click: () => shell.openExternal("https://github.com/saphid/steam-frame") }],
