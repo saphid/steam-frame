@@ -1,7 +1,7 @@
 // Downloads what the app bundles so users install nothing else: a standalone
-// Python (python-build-standalone) and adb (Android platform-tools). Each goes in
-// build/deps/<os>-<arch>/{python,tools}, which package.json copies into the app's
-// resources. Everything is pinned by version and SHA-256.
+// Python (python-build-standalone), adb (Android platform-tools) and a CA
+// bundle. Each goes in build/deps/<os>-<arch>/{python,tools}, which package.json
+// copies into the app's resources. Everything is pinned by version and SHA-256.
 //   node build/fetch-deps.js mac arm64 | win x64 | linux x64 arm64
 const crypto = require("crypto");
 const fs = require("fs");
@@ -28,6 +28,11 @@ const TOOLS = {
         ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll", "libwinpthread-1.dll"]],
   linux: ["linux", "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1", ["adb"]],
 };
+
+// Mozilla's CA list, as curl publishes it: Python on Windows only trusts roots
+// already in the Windows store (see frame_host.trust_bundled_cas).
+const CA = "2026-09-25";
+const CA_SHA256 = "a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505";
 
 // Parts of Python the server never imports (GUI, tests, packaging, headers).
 const PRUNE = [
@@ -79,7 +84,7 @@ async function fetch(os, arch) {
   if (!PYTHON[key]) throw new Error(`no bundle for ${key}`);
   const out = path.join(__dirname, "deps", key);
   const stamp = path.join(out, ".version");
-  const version = `python ${PY}, platform-tools ${PT}`;
+  const version = `python ${PY}, platform-tools ${PT}, CA ${CA}`;
   if (fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8") === version) {
     console.log(`${key}: already fetched (${version})`);
     return;
@@ -107,6 +112,7 @@ async function fetch(os, arch) {
     if (os !== "win") fs.chmodSync(path.join(tools, "adb"), 0o755);
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+  await download(`https://curl.se/ca/cacert-${CA}.pem`, CA_SHA256, path.join(tools, "cacert.pem"));
   fs.writeFileSync(stamp, version);
   console.log(`${key}: ${version} -> ${out}`);
 }

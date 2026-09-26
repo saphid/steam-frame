@@ -72,7 +72,9 @@ and shows it in its own window; the server stops when you quit the app. The
 app bundles `ui/`, `scripts/`, `frame/android/` and the rated catalogue from
 `apk-catalog/`, plus a standalone Python
 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone))
-and `adb` from Google's platform-tools, so there's nothing else to install.
+and `adb` from Google's platform-tools, so there's nothing else to install. It
+also bundles curl's copy of Mozilla's CA list, because Python on Windows only
+trusts root certificates already in the Windows store.
 `app/build/fetch-deps.js` downloads both, pinned by SHA-256.
 
 The server is Python stdlib only and listens on 127.0.0.1. It rejects requests

@@ -17,7 +17,7 @@ const IS_WIN = process.platform === "win32";
 
 // Packaged: <resources>/{ui,scripts,python}. Dev: the repo checkout.
 const ROOT = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
-const TOOLS = path.join(ROOT, "tools");  // bundled adb
+const TOOLS = path.join(ROOT, "tools");  // bundled adb and CA certificates
 const SERVER = path.join(ROOT, "ui", "server.py");
 const SCRIPTS = path.join(ROOT, "scripts");
 const LOG_DIR = IS_MAC ? path.join(os.homedir(), "Library", "Logs", "Frame Control")

@@ -28,14 +28,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-# Windows' embedded Python (bundled with the app) doesn't put the script's own
-# folder on sys.path, so add it for the sibling modules below.
+# The app runs Python with -I, which leaves the script's own folder off
+# sys.path, so add it for the sibling modules below.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import frame_android  # noqa: E402
 import frame_catalog  # noqa: E402
 import frame_host  # noqa: E402
 import frame_store  # noqa: E402
+
+frame_host.trust_bundled_cas()
 
 HERE = Path(__file__).resolve().parent
 FRAME = os.environ.get("FRAME_ALIAS", "frame")

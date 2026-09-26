@@ -8,6 +8,7 @@ CLI (used by the Electron app, so terminal handling lives in one place):
 import os
 import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -106,6 +107,27 @@ def adb():
     if not found:
         raise HostError(f"adb isn't installed on this computer: {install_hint('adb')}")
     return found
+
+
+def trust_bundled_cas():
+    """Trust the app's CA bundle for HTTPS as well as the system's certificates.
+
+    Python on Windows only sees the root certificates already in the Windows
+    store, and a fresh install fetches those lazily, so Steam and F-Droid can
+    fail with CERTIFICATE_VERIFY_FAILED. The app bundles curl's copy of Mozilla's
+    CA list (app/build/fetch-deps.js); outside the app this does nothing. Call it
+    before the first urlopen: urllib keeps the HTTPS context it builds then.
+    """
+    tools = os.environ.get("FRAME_CONTROL_TOOLS")
+    cafile = os.path.join(tools, "cacert.pem") if tools else None
+    if not cafile or not os.path.isfile(cafile):
+        return
+
+    def context(*args, **kwargs):
+        ctx = ssl.create_default_context(*args, **kwargs)
+        ctx.load_verify_locations(cafile)
+        return ctx
+    ssl._create_default_https_context = context  # urllib's default for HTTPS
 
 
 def open_path(path):
