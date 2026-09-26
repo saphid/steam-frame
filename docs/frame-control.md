@@ -56,7 +56,10 @@ python3 ui/server.py         # anywhere: then open http://127.0.0.1:47810
   (0.85–1.3×) over ADB (`wm size`, `wm density`, `font_scale`). Reset puts all
   three back. Whether the settings survive the app relaunching is untested.
 - **Transfer**: drag and drop files to `~/Downloads`; `.apk` files install as
-  their own Android app. Send typed text, or your computer's clipboard, to the
+  their own Android app. A game's `.zip`, folder or `.exe` becomes a title in
+  the Steam library (Valve's Devkit Game path, with Proton or the Steam Linux
+  Runtime picked from the program's header), listed under **Sideloaded titles**
+  with Launch and Remove; see [sideloading.md](sideloading.md). Send typed text, or your computer's clipboard, to the
   Frame clipboard.
 - **Flatpaks**: install and remove them (quick picks: Moonlight, Firefox, VLC,
   Remmina).
@@ -69,7 +72,7 @@ python3 ui/server.py         # anywhere: then open http://127.0.0.1:47810
 
 `app/` is an Electron shell. It starts `ui/server.py` on a free loopback port
 and shows it in its own window; the server stops when you quit the app. The
-app bundles `ui/`, `scripts/`, `frame/android/` and the rated catalogue from
+app bundles `ui/`, `scripts/`, `frame/android/`, Valve's `frame/devkit-utils/` and the rated catalogue from
 `apk-catalog/`, plus a standalone Python
 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone))
 and `adb` from Google's platform-tools, so there's nothing else to install.
@@ -93,7 +96,7 @@ library capsules and green Play buttons.
 both capture modes (headset view while in use, and a blank frame in standby,
 which the UI labels), clipboard, volume, file push, and input validation.
 **Not yet exercised from the UI:** Launch, Flatpak install/remove, APK drop,
-and the power buttons. Each of these calls a command that was verified
+title sideloading (not yet run on a headset at all), and the power buttons. Each of these calls a command that was verified
 separately.
 
 ## Per-platform notes

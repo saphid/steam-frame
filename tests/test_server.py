@@ -6,14 +6,17 @@ request guards and input validation, which all run before any SSH call.
 Run: python3 -m unittest discover -s tests
 """
 import http.client
+import io
 import json
 import os
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -54,7 +57,7 @@ class ServerGuards(unittest.TestCase):
     @classmethod
     def request(cls, method, path, body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=10)
-        data = json.dumps(body).encode() if body is not None else None
+        data = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None
         conn.request(method, path, body=data, headers=headers or {})
         r = conn.getresponse()
         payload = r.read()
@@ -129,6 +132,37 @@ class ServerGuards(unittest.TestCase):
         conn.close()
         status, _ = self.post("/api/launch", ["not", "an", "object"])
         self.assertEqual(status, 400)
+
+    def test_title_upload_is_inspected_then_discarded(self):
+        # A zip holding a Windows x86-64 program: inspected locally, no SSH until install.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("Tiny Game/Tiny Game.exe",
+                       b"MZ" + b"\0" * 0x3A + struct.pack("<I", 0x40) + b"PE\0\0" + struct.pack("<HHIIIHH", 0x8664, 1, 0, 0, 0, 0xF0, 0x22))
+        status, _, payload = self.request("POST", "/api/upload", buf.getvalue(),
+                                          {"X-Frame-UI": "1", "X-Mode": "title", "X-Filename": quote("Tiny Game-win64.zip")})
+        r = json.loads(payload)
+        self.assertEqual(status, 200, r)
+        self.assertEqual((r["plan"]["id"], r["plan"]["target"], r["plan"]["runtime"]),
+                         ("Tiny_Game", "Tiny Game.exe", "proton-experimental"))
+        self.assertNotIn("root", r["plan"])
+        self.assertEqual(self.post("/api/titles", {"action": "discard", "token": r["token"]})[0], 200)
+        self.assertEqual(self.post("/api/titles", {"action": "install", "token": r["token"]})[0], 400)
+
+    def test_title_input_validation(self):
+        status, _, _ = self.request("POST", "/api/upload", b"not a zip",
+                                    {"X-Frame-UI": "1", "X-Mode": "title", "X-Filename": "x.zip"})
+        self.assertEqual(status, 400)
+        for body in ({"action": "inspect", "path": "relative/game.zip"},
+                     {"action": "inspect", "path": "/nonexistent/frame-control/game.zip"},
+                     {"action": "install", "token": "nope"},
+                     {"action": "launch", "id": "x; rm -rf ~"},
+                     {"action": "remove", "id": "../etc"},
+                     {"action": "explode"}):
+            status, payload = self.post("/api/titles", body)
+            self.assertEqual(status, 400, f"{body} -> {payload}")
+        self.assertEqual(self.request("GET", "/api/titles/job?token=nope", headers={"X-Frame-UI": "1"})[0], 404)
+        self.assertEqual(self.request("POST", "/api/titles", {"action": "list"})[0], 403)
 
     def test_unknown_routes(self):
         self.assertEqual(self.request("GET", "/nope")[0], 404)
