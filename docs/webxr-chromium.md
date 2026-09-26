@@ -109,12 +109,15 @@ this build):
   Chromium's Vulkan backend is off. That doesn't stop the session.
 - Unprivileged user namespaces work (`unshare -Ur true`), so the namespace
   sandbox runs without the setuid `chrome_sandbox`.
+- **With the headset on** (same day, seccomp sandbox off): the WebXR
+  samples' Immersive VR Session showed its scene in the headset, and SteamVR
+  loaded the Frame controller bindings for the app. The three.js
+  [`webxr_vr_video`](https://threejs.org/examples/webxr_vr_video.html) demo,
+  a stereo 360 video, played in 3D after pressing Enter VR.
 
-**Not verified yet:** nobody was wearing the headset during the test, so
-SteamVR kept it in standby. The session stayed at
-`XR_SESSION_STATE_SYNCHRONIZED` (the page saw `visibilityState: "hidden"`)
-and only the first frame ran. Still open:
+**Not verified yet:**
 
-- Whether the image shows up correctly in the headset, and at what frame rate.
-- Whether VR180 or 360 video players (DeoVR, DL8 embeds) play in 3D.
-- Controller and hand input in the session.
+- Frame rate and dropped frames during playback (nothing was measured; it
+  looked fine).
+- Third-party VR180 players (DeoVR and DL8 web embeds).
+- Controller and hand input inside a WebXR page.
