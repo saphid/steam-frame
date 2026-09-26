@@ -50,8 +50,8 @@ sudo: the arm64 sysroot comes from Chromium's own script. It needs about
 `gclient sync --no-history`, installs the sysroot, applies one extra seccomp
 fix (below), builds `chrome` with `symbol_level=0` and proprietary codecs, and
 packs `chromium-xr-arm64.tar.xz` (about 145 MB, GPU libraries included).
-Progress is logged to `~/chromium-xr/stage`. The build aborts if `/` drops
-below 12 GB free.
+Progress is logged to `~/chromium-xr/stage`. The build aborts if the disk
+holding `~/chromium-xr` drops below 12 GB free.
 
 First run, 2026-09-25, on a 12-core, 31 GB x64 Linux box: 9 h 33 min for
 94,835 steps, giving Chromium 156.0.8071.0. A rebuild after a one-file change
@@ -60,7 +60,8 @@ takes under a minute, plus about 4 minutes to repack.
 **The extra fix.** The CL's XR seccomp policy refuses `getsockopt`. SteamVR's
 client calls `getsockopt(SOL_SOCKET, SO_PEERCRED)` inside `xrCreateInstance`,
 so the XR process died with a seccomp crash (arm64 syscall 209). The script
-allows that one option.
+allows that one option. That's needed but not enough: `launch` still turns
+seccomp off (below), so the patch only matters once that's fixed too.
 
 ## Running it on the Frame
 
@@ -73,7 +74,7 @@ scripts/chromium-xr.sh check            # prints isSessionSupported('immersive-v
 ```
 
 It runs natively, not as a Flatpak. `launch` opens it as its own panel on
-gamescope's X display, the same way as [`panel-on-frame.sh`](panels.md), so
+gamescope's X display, the same way as [`panel-on-frame.sh`](../scripts/panel-on-frame.sh) ([panels.md](panels.md)), so
 the Plasma desktop doesn't need to be open. It uses its own profile
 (`~/.config/chromium-xr`) and DevTools on loopback port 9223, so it doesn't
 collide with the Flatpak's 9222. When a page enters VR, Chrome asks
@@ -87,7 +88,10 @@ the wrong process ("Unable to init path manager: VRInitError_Init_Internal")
 and `xrCreateInstance` fails. The broker can't answer `/proc/self` for another
 process, so fixing this needs a change in Chromium's broker client or in the
 CL. The namespace sandbox stays on, but seccomp is off for every process, so
-use this profile for VR sites rather than everyday browsing.
+use this profile for VR sites rather than everyday browsing. DevTools on
+port 9223 has no authentication. It listens on loopback, but with the
+userspace Tailscale from [tailscale.md](tailscale.md) running, loopback ports
+are reachable from your tailnet. Close the browser when you're done.
 
 **Verified 2026-09-26** (Frame BUILD_ID 20260922.6101926, SteamVR 2.17.10,
 this build):
